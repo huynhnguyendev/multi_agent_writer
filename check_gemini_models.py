@@ -10,11 +10,11 @@ from google import genai
 
 load_dotenv()
 
-api_key = os.getenv("GOOGLE_API_KEY")
+api_key = os.getenv("GEMINI_API_KEY")
 
 if not api_key:
     raise ValueError(
-        "GOOGLE_API_KEY không tồn tại trong file .env"
+        "GEMINI_API_KEY không tồn tại trong file .env"
     )
 
 

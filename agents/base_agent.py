@@ -1,0 +1,1 @@
+# Base class cho tất cả agents

@@ -1,0 +1,1 @@
+# Node 6: Tổng hợp bài viết (Gemini 3.5)

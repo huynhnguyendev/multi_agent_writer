@@ -1,0 +1,1 @@
+# Node 2: Route + Research decision (Gemini 3.1)

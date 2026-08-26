@@ -68,59 +68,59 @@ async def run_supervisor(user_request: UserRequest) -> SupervisorDecision:
 #   python -m agents.supervisor
 # ============================================================
 
-if __name__ == "__main__":
-    import asyncio
+# if __name__ == "__main__":
+#     import asyncio
 
-    TEST_CASES = [
-        (
-            UserRequest(
-                topic="Transformer là gì",
-                article_type="tutorial",
-                target_audience="sinh viên CNTT",
-                tone="beginner-friendly",
-                language="vi",
-                raw_input="Giải thích Transformer là gì cho người mới bắt đầu.",
-            ),
-            "kỳ vọng closed_book (kiến thức nền tảng)",
-        ),
-        (
-            UserRequest(
-                topic="Tình hình MCP mới nhất năm 2026",
-                article_type="news",
-                target_audience="AI Engineer",
-                tone="technical",
-                language="vi",
-                raw_input="Viết bài về tình hình MCP mới nhất năm 2026.",
-            ),
-            "kỳ vọng open_book (cần thông tin cập nhật)",
-        ),
-        (
-            UserRequest(
-                topic="MCP và các thay đổi mới nhất so với kiến trúc cũ",
-                article_type="blog",
-                target_audience="AI Engineer",
-                tone="technical",
-                language="vi",
-                raw_input="Giải thích MCP là gì và phân tích những thay đổi mới nhất.",
-            ),
-            "kỳ vọng hybrid (nền tảng + cập nhật)",
-        ),
-    ]
+#     TEST_CASES = [
+#         (
+#             UserRequest(
+#                 topic="Transformer là gì",
+#                 article_type="tutorial",
+#                 target_audience="sinh viên CNTT",
+#                 tone="beginner-friendly",
+#                 language="vi",
+#                 raw_input="Giải thích Transformer là gì cho người mới bắt đầu.",
+#             ),
+#             "kỳ vọng closed_book (kiến thức nền tảng)",
+#         ),
+#         (
+#             UserRequest(
+#                 topic="Tình hình MCP mới nhất năm 2026",
+#                 article_type="news",
+#                 target_audience="AI Engineer",
+#                 tone="technical",
+#                 language="vi",
+#                 raw_input="Viết bài về tình hình MCP mới nhất năm 2026.",
+#             ),
+#             "kỳ vọng open_book (cần thông tin cập nhật)",
+#         ),
+#         (
+#             UserRequest(
+#                 topic="MCP và các thay đổi mới nhất so với kiến trúc cũ",
+#                 article_type="blog",
+#                 target_audience="AI Engineer",
+#                 tone="technical",
+#                 language="vi",
+#                 raw_input="Giải thích MCP là gì và phân tích những thay đổi mới nhất.",
+#             ),
+#             "kỳ vọng hybrid (nền tảng + cập nhật)",
+#         ),
+#     ]
 
-    async def _debug():
-        print("=" * 60)
-        print("DEBUG: Test Supervisor")
-        print("=" * 60)
+#     async def _debug():
+#         print("=" * 60)
+#         print("DEBUG: Test Supervisor")
+#         print("=" * 60)
 
-        for user_request, label in TEST_CASES:
-            print(f"\n--- Test case: {label} ---")
-            print(f"Topic: {user_request.topic}")
+#         for user_request, label in TEST_CASES:
+#             print(f"\n--- Test case: {label} ---")
+#             print(f"Topic: {user_request.topic}")
 
-            decision = await run_supervisor(user_request)
+#             decision = await run_supervisor(user_request)
 
-            print(f"Mode       : {decision.mode}")
-            print(f"Reasoning  : {decision.reasoning}")
-            print(f"Language   : {decision.language}")
-            print(f"Queries    : {decision.research_queries}")
+#             print(f"Mode       : {decision.mode}")
+#             print(f"Reasoning  : {decision.reasoning}")
+#             print(f"Language   : {decision.language}")
+#             print(f"Queries    : {decision.research_queries}")
 
-    asyncio.run(_debug())
+#     asyncio.run(_debug())

@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from google import genai
+from groq import Groq
 
 
 # ============================================================
@@ -10,19 +10,19 @@ from google import genai
 
 load_dotenv()
 
-api_key = os.getenv("GOOGLE_API_KEY")
+api_key = os.getenv("GROQ_API_KEY")
 
 if not api_key:
     raise ValueError(
-        "GOOGLE_API_KEY không tồn tại trong file .env"
+        "GROQ_API_KEY không tồn tại trong file .env"
     )
 
 
 # ============================================================
-# CREATE GEMINI CLIENT
+# CREATE GROQ CLIENT
 # ============================================================
 
-client = genai.Client(
+client = Groq(
     api_key=api_key
 )
 
@@ -32,26 +32,16 @@ client = genai.Client(
 # ============================================================
 
 print("\n" + "=" * 70)
-print("GEMINI MODELS AVAILABLE TO YOUR API KEY")
+print("GROQ MODELS AVAILABLE TO YOUR API KEY")
 print("=" * 70)
 
 models = client.models.list()
 
 
-for model in models:
-
-    supported_actions = getattr(
-        model,
-        "supported_actions",
-        [],
-    )
-
-    # Chỉ lấy model có thể generate content
-    if "generateContent" not in supported_actions:
-        continue
+for model in models.data:
 
     print(
-        f"Model : {model.name}"
+        f"Model : {model.id}"
     )
 
 

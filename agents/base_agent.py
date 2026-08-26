@@ -108,7 +108,33 @@ class BaseAgent:
             )
 
         response = await self.llm.ainvoke([HumanMessage(content=content)])
-        return response.content
+        return self._normalize_content(response.content)
+
+    @staticmethod
+    def _normalize_content(content) -> str:
+        """
+        Chuẩn hóa response.content về string thuần.
+
+        Gemini (ChatGoogleGenerativeAI) đôi khi trả content dạng list
+        các content block (ví dụ: [{"type": "text", "text": "..."}])
+        thay vì str thuần như Groq. Hàm này gộp lại thành 1 string,
+        bất kể provider nào.
+        """
+        if isinstance(content, str):
+            return content
+
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict):
+                    # Các dạng phổ biến: {"type": "text", "text": "..."}
+                    text = block.get("text") or block.get("content") or ""
+                    parts.append(text)
+            return "".join(parts)
+
+        return str(content)
 
     @staticmethod
     def _extract_json(text: str) -> dict:

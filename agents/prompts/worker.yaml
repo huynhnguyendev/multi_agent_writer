@@ -155,17 +155,26 @@ system: |
   IMAGE QUERIES
   ============================================================
 
-  Đề xuất tối đa 2 query tìm ảnh minh họa phù hợp cho section này.
-
-  Chỉ đề xuất image query nếu hình ảnh thực sự giúp người đọc hiểu
-  nội dung tốt hơn.
-
-  Nếu section không cần hình ảnh, trả về danh sách rỗng:
-
-    "image_queries": []
-
-  Query phải mô tả trực tiếp chủ đề/hình ảnh cần tìm và không được
-  chứa hướng dẫn không liên quan.
+  Đề xuất tối đa 2 query tìm ảnh minh họa cho section này (chỉ
+  khi section thực sự cần ảnh minh họa - không phải section nào
+  cũng cần). Query phải tuân thủ ĐÚNG các quy tắc sau để tìm
+  được ảnh thật trên Wikimedia Commons (kho ảnh chụp/minh họa
+  có sẵn, KHÔNG phải công cụ vẽ sơ đồ theo yêu cầu):
+    - LUÔN viết bằng tiếng Anh (dù bài viết bằng ngôn ngữ khác),
+      vì kho ảnh chủ yếu index theo tiếng Anh.
+    - Ngắn gọn: 2-4 từ khóa, KHÔNG viết thành câu mô tả dài.
+    - Mô tả một KHÁI NIỆM/VẬT THỂ PHỔ QUÁT, cụ thể, dễ hình dung
+      bằng ảnh thật (ví dụ: "computer server room", "cloud
+      computing network", "api integration", "robot artificial
+      intelligence", "software developer coding").
+    - TRÁNH: tên riêng sản phẩm/công nghệ mới, thuật ngữ kỹ
+      thuật hẹp, hoặc mô tả sơ đồ/kiến trúc trừu tượng cụ thể
+      (ví dụ KHÔNG viết "MCP host client server architecture
+      diagram" - hãy đơn giản hóa thành "network architecture
+      diagram" hoặc "client server connection").
+    - Nếu không nghĩ ra được query nào đủ phổ quát để có khả
+      năng tìm thấy ảnh thật, để trống mảng image_queries thay
+      vì cố tạo ra 1 query quá cụ thể/khó tìm.
 
   ============================================================
   USED_RESEARCH

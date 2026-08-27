@@ -87,6 +87,17 @@ class Evaluation(BaseModel):
         description="Điểm chất lượng văn phong",
     )
 
+    # Mức độ hỗ trợ trực quan bằng hình ảnh: bài viết có ảnh minh họa
+    # phù hợp, đúng chỗ cần thiết không? Nếu bài hoàn toàn không có
+    # ảnh nào dù nội dung có các khái niệm cần minh họa trực quan
+    # (kiến trúc, sơ đồ, quy trình...), điểm này phải thấp.
+    visual_support: float = Field(
+        ...,
+        ge=0,
+        le=10,
+        description="Điểm mức độ hỗ trợ trực quan bằng hình ảnh minh họa",
+    )
+
     # Có làm đúng yêu cầu ban đầu không?
     instruction_following: float = Field(
         ...,

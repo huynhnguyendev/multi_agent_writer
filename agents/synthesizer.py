@@ -204,110 +204,110 @@ def save_article_to_markdown(
 #   python -m agents.synthesizer
 # ============================================================
 
-if __name__ == "__main__":
-    import asyncio
+# if __name__ == "__main__":
+#     import asyncio
 
-    from agents.schemas.plan import Task
+#     from agents.schemas.plan import Task
 
-    def _print_article(article: FinalArticle) -> None:
-        print(f"\nTitle          : {article.title}")
-        print(f"Version        : {article.version}")
-        print(f"Word count     : {article.word_count}")
-        print(f"Sections       : {article.sections}")
-        print(f"Skipped tasks  : {article.skipped_task_ids}")
-        print("-" * 60)
-        print(article.markdown)
+#     def _print_article(article: FinalArticle) -> None:
+#         print(f"\nTitle          : {article.title}")
+#         print(f"Version        : {article.version}")
+#         print(f"Word count     : {article.word_count}")
+#         print(f"Sections       : {article.sections}")
+#         print(f"Skipped tasks  : {article.skipped_task_ids}")
+#         print("-" * 60)
+#         print(article.markdown)
 
-    async def _debug():
-        print("=" * 60)
-        print("DEBUG: Test Synthesizer")
-        print("=" * 60)
+#     async def _debug():
+#         print("=" * 60)
+#         print("DEBUG: Test Synthesizer")
+#         print("=" * 60)
 
-        user_request = UserRequest(
-            topic="MCP (Model Context Protocol) cho AI Engineer",
-            article_type="blog",
-            target_audience="AI Engineer",
-            tone="technical",
-            language="vi",
-        )
+#         user_request = UserRequest(
+#             topic="MCP (Model Context Protocol) cho AI Engineer",
+#             article_type="blog",
+#             target_audience="AI Engineer",
+#             tone="technical",
+#             language="vi",
+#         )
 
-        plan = Plan(
-            title="MCP cho AI Engineer",
-            objective="Giải thích MCP và giá trị thực tiễn cho AI Engineer.",
-            target_audience="AI Engineer",
-            tone="technical",
-            estimated_sections=3,
-            tasks=[
-                Task(id="task_01", title="Giới thiệu", description="...", objective="...", expected_output="...", order=0),
-                Task(id="task_02", title="Kiến trúc", description="...", objective="...", expected_output="...", order=1, depends_on=["task_01"]),
-                Task(id="task_03", title="Kết luận", description="...", objective="...", expected_output="...", order=2, depends_on=["task_02"]),
-            ],
-        )
+#         plan = Plan(
+#             title="MCP cho AI Engineer",
+#             objective="Giải thích MCP và giá trị thực tiễn cho AI Engineer.",
+#             target_audience="AI Engineer",
+#             tone="technical",
+#             estimated_sections=3,
+#             tasks=[
+#                 Task(id="task_01", title="Giới thiệu", description="...", objective="...", expected_output="...", order=0),
+#                 Task(id="task_02", title="Kiến trúc", description="...", objective="...", expected_output="...", order=1, depends_on=["task_01"]),
+#                 Task(id="task_03", title="Kết luận", description="...", objective="...", expected_output="...", order=2, depends_on=["task_02"]),
+#             ],
+#         )
 
-        worker_outputs = [
-            WorkerOutput(
-                task_id="task_01",
-                title="Giới thiệu MCP",
-                content="MCP (Model Context Protocol) là một tiêu chuẩn mở do Anthropic phát triển, cho phép LLM kết nối với dữ liệu và công cụ bên ngoài một cách nhất quán.",
-                success=True,
-            ),
-            WorkerOutput(
-                task_id="task_02",
-                title="Kiến trúc kỹ thuật",
-                content="",
-                success=False,
-                error="LLM timeout sau 3 lần retry",
-            ),
-            WorkerOutput(
-                task_id="task_03",
-                title="Kết luận",
-                content="Tóm lại, MCP mở ra một hướng đi mới cho việc chuẩn hóa tích hợp AI với thế giới bên ngoài.",
-                success=True,
-            ),
-        ]
+#         worker_outputs = [
+#             WorkerOutput(
+#                 task_id="task_01",
+#                 title="Giới thiệu MCP",
+#                 content="MCP (Model Context Protocol) là một tiêu chuẩn mở do Anthropic phát triển, cho phép LLM kết nối với dữ liệu và công cụ bên ngoài một cách nhất quán.",
+#                 success=True,
+#             ),
+#             WorkerOutput(
+#                 task_id="task_02",
+#                 title="Kiến trúc kỹ thuật",
+#                 content="",
+#                 success=False,
+#                 error="LLM timeout sau 3 lần retry",
+#             ),
+#             WorkerOutput(
+#                 task_id="task_03",
+#                 title="Kết luận",
+#                 content="Tóm lại, MCP mở ra một hướng đi mới cho việc chuẩn hóa tích hợp AI với thế giới bên ngoài.",
+#                 success=True,
+#             ),
+#         ]
 
-        # --- Test 1: Tổng hợp lần đầu (có 1 task bị lỗi, phải bị bỏ qua) ---
-        print("\n### TEST 1: Tổng hợp lần đầu (task_02 bị lỗi) ###")
-        article = None
-        try:
-            article = await run_synthesizer(plan, worker_outputs, user_request)
-            _print_article(article)
-        except LLMOutputError as e:
-            print(f"❌ Synthesizer thất bại: {e}")
+#         # --- Test 1: Tổng hợp lần đầu (có 1 task bị lỗi, phải bị bỏ qua) ---
+#         print("\n### TEST 1: Tổng hợp lần đầu (task_02 bị lỗi) ###")
+#         article = None
+#         try:
+#             article = await run_synthesizer(plan, worker_outputs, user_request)
+#             _print_article(article)
+#         except LLMOutputError as e:
+#             print(f"❌ Synthesizer thất bại: {e}")
 
-        # --- Test 2: Revision - giả lập Evaluator từ chối, yêu cầu viết lại ---
-        if article is not None:
-            print("\n\n### TEST 2: Revision sau khi Evaluator từ chối ###")
-            revised_article = await run_synthesizer(
-                plan,
-                worker_outputs,
-                user_request,
-                revision_feedback=[
-                    "Phần giới thiệu quá ngắn, cần mở rộng thêm về bối cảnh ra đời của MCP.",
-                    "Cần thêm ví dụ cụ thể để bài viết sinh động hơn.",
-                ],
-                previous_article=article,
-            )
-            _print_article(revised_article)
-            assert revised_article.version == article.version + 1, "❌ Version không tăng đúng!"
-            print(f"\n✅ Version tăng đúng: {article.version} -> {revised_article.version}")
+#         # --- Test 2: Revision - giả lập Evaluator từ chối, yêu cầu viết lại ---
+#         if article is not None:
+#             print("\n\n### TEST 2: Revision sau khi Evaluator từ chối ###")
+#             revised_article = await run_synthesizer(
+#                 plan,
+#                 worker_outputs,
+#                 user_request,
+#                 revision_feedback=[
+#                     "Phần giới thiệu quá ngắn, cần mở rộng thêm về bối cảnh ra đời của MCP.",
+#                     "Cần thêm ví dụ cụ thể để bài viết sinh động hơn.",
+#                 ],
+#                 previous_article=article,
+#             )
+#             _print_article(revised_article)
+#             assert revised_article.version == article.version + 1, "❌ Version không tăng đúng!"
+#             print(f"\n✅ Version tăng đúng: {article.version} -> {revised_article.version}")
 
-        # --- Test 3: Lưu bài viết ra file .md (giả lập Evaluator đã duyệt) ---
-        if article is not None:
-            print("\n\n### TEST 3: Lưu bài viết ra outputs/ (giả lập evaluator.accepted=True) ###")
+#         # --- Test 3: Lưu bài viết ra file .md (giả lập Evaluator đã duyệt) ---
+#         if article is not None:
+#             print("\n\n### TEST 3: Lưu bài viết ra outputs/ (giả lập evaluator.accepted=True) ###")
 
-            # Gọi 2 lần liên tiếp để chứng minh: folder chỉ log "tạo mới" ở
-            # lần đầu tiên (nếu chưa tồn tại), lần sau không log lại.
-            filepath_1 = save_article_to_markdown(article, workflow_id="test-workflow-001")
-            filepath_2 = save_article_to_markdown(article, workflow_id="test-workflow-002")
+#             # Gọi 2 lần liên tiếp để chứng minh: folder chỉ log "tạo mới" ở
+#             # lần đầu tiên (nếu chưa tồn tại), lần sau không log lại.
+#             filepath_1 = save_article_to_markdown(article, workflow_id="test-workflow-001")
+#             filepath_2 = save_article_to_markdown(article, workflow_id="test-workflow-002")
 
-            assert filepath_1.parent == OUTPUT_DIR, "❌ File không nằm trong outputs/!"
-            assert filepath_1.exists(), "❌ File 1 không được tạo!"
-            assert filepath_2.exists(), "❌ File 2 không được tạo!"
-            assert filepath_1 != filepath_2, "❌ 2 file bị trùng tên (thiếu timestamp/workflow_id)!"
+#             assert filepath_1.parent == OUTPUT_DIR, "❌ File không nằm trong outputs/!"
+#             assert filepath_1.exists(), "❌ File 1 không được tạo!"
+#             assert filepath_2.exists(), "❌ File 2 không được tạo!"
+#             assert filepath_1 != filepath_2, "❌ 2 file bị trùng tên (thiếu timestamp/workflow_id)!"
 
-            print(f"\n✅ Đúng: outputs/ chỉ được tạo 1 lần, 2 file khác tên nhau:")
-            print(f"   - {filepath_1.name}")
-            print(f"   - {filepath_2.name}")
+#             print(f"\n✅ Đúng: outputs/ chỉ được tạo 1 lần, 2 file khác tên nhau:")
+#             print(f"   - {filepath_1.name}")
+#             print(f"   - {filepath_2.name}")
 
-    asyncio.run(_debug())
+#     asyncio.run(_debug())

@@ -204,79 +204,79 @@ async def run_worker(
 #   python -m agents.executor.worker
 # ============================================================
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    def _print_output(output: WorkerOutput) -> None:
-        print(f"\nTask ID       : {output.task_id}")
-        print(f"Success       : {output.success}")
-        if not output.success:
-            print(f"Error         : {output.error}")
-            return
-        print(f"Title         : {output.title}")
-        print(f"Used research : {output.used_research}")
-        print(f"Sources       : {[s.url for s in output.sources]}")
-        print(f"Image queries : {output.image_queries}")
-        print(f"Content:\n{output.content}")
+#     def _print_output(output: WorkerOutput) -> None:
+#         print(f"\nTask ID       : {output.task_id}")
+#         print(f"Success       : {output.success}")
+#         if not output.success:
+#             print(f"Error         : {output.error}")
+#             return
+#         print(f"Title         : {output.title}")
+#         print(f"Used research : {output.used_research}")
+#         print(f"Sources       : {[s.url for s in output.sources]}")
+#         print(f"Image queries : {output.image_queries}")
+#         print(f"Content:\n{output.content}")
 
-    async def _debug():
-        print("=" * 60)
-        print("DEBUG: Test Worker")
-        print("=" * 60)
+#     async def _debug():
+#         print("=" * 60)
+#         print("DEBUG: Test Worker")
+#         print("=" * 60)
 
-        user_request = UserRequest(
-            topic="MCP (Model Context Protocol) cho AI Engineer",
-            article_type="blog",
-            target_audience="AI Engineer",
-            tone="technical",
-            language="vi",
-        )
+#         user_request = UserRequest(
+#             topic="MCP (Model Context Protocol) cho AI Engineer",
+#             article_type="blog",
+#             target_audience="AI Engineer",
+#             tone="technical",
+#             language="vi",
+#         )
 
-        # --- Test 1: Task KHÔNG cần research ---
-        task_no_research = Task(
-            id="task_01",
-            title="Giới thiệu MCP",
-            description="Giải thích MCP là gì ở mức khái niệm cơ bản.",
-            objective="Người đọc hiểu MCP là gì và tại sao nó quan trọng.",
-            expected_output="Đoạn văn khoảng 200 từ.",
-            requires_research=False,
-        )
+#         # --- Test 1: Task KHÔNG cần research ---
+#         task_no_research = Task(
+#             id="task_01",
+#             title="Giới thiệu MCP",
+#             description="Giải thích MCP là gì ở mức khái niệm cơ bản.",
+#             objective="Người đọc hiểu MCP là gì và tại sao nó quan trọng.",
+#             expected_output="Đoạn văn khoảng 200 từ.",
+#             requires_research=False,
+#         )
 
-        print("\n### TEST 1: Task không cần research ###")
-        output_1 = await run_worker(task_no_research, user_request)
-        _print_output(output_1)
+#         print("\n### TEST 1: Task không cần research ###")
+#         output_1 = await run_worker(task_no_research, user_request)
+#         _print_output(output_1)
 
-        # --- Test 2: Task CẦN research (gọi Tavily thật) ---
-        task_with_research = Task(
-            id="task_02",
-            title="Tình hình phát triển MCP gần đây",
-            description="Nêu các cập nhật, phiên bản mới của MCP gần đây.",
-            objective="Người đọc biết được xu hướng phát triển mới nhất của MCP.",
-            expected_output="Đoạn văn khoảng 250 từ, có dẫn chứng cụ thể.",
-            requires_research=True,
-            research_queries=["Model Context Protocol latest updates 2026"],
-        )
+#         # --- Test 2: Task CẦN research (gọi Tavily thật) ---
+#         task_with_research = Task(
+#             id="task_02",
+#             title="Tình hình phát triển MCP gần đây",
+#             description="Nêu các cập nhật, phiên bản mới của MCP gần đây.",
+#             objective="Người đọc biết được xu hướng phát triển mới nhất của MCP.",
+#             expected_output="Đoạn văn khoảng 250 từ, có dẫn chứng cụ thể.",
+#             requires_research=True,
+#             research_queries=["Model Context Protocol latest updates 2026"],
+#         )
 
-        print("\n### TEST 2: Task cần research (gọi Tavily thật) ###")
-        output_2 = await run_worker(task_with_research, user_request)
-        _print_output(output_2)
+#         print("\n### TEST 2: Task cần research (gọi Tavily thật) ###")
+#         output_2 = await run_worker(task_with_research, user_request)
+#         _print_output(output_2)
 
-        # --- Test 3: Task phụ thuộc vào task_01 (dùng dependency_context) ---
-        task_dependent = Task(
-            id="task_03",
-            title="Kết luận",
-            description="Tổng kết lại những gì đã trình bày ở phần giới thiệu.",
-            objective="Chốt lại ý chính, liên kết với nội dung đã viết trước đó.",
-            expected_output="Đoạn văn khoảng 150 từ.",
-            requires_research=False,
-            depends_on=["task_01"],
-        )
+#         # --- Test 3: Task phụ thuộc vào task_01 (dùng dependency_context) ---
+#         task_dependent = Task(
+#             id="task_03",
+#             title="Kết luận",
+#             description="Tổng kết lại những gì đã trình bày ở phần giới thiệu.",
+#             objective="Chốt lại ý chính, liên kết với nội dung đã viết trước đó.",
+#             expected_output="Đoạn văn khoảng 150 từ.",
+#             requires_research=False,
+#             depends_on=["task_01"],
+#         )
 
-        print("\n### TEST 3: Task phụ thuộc task_01 (test dependency_context) ###")
-        output_3 = await run_worker(
-            task_dependent,
-            user_request,
-            completed_outputs=[output_1],
-        )
-        _print_output(output_3)
+#         print("\n### TEST 3: Task phụ thuộc task_01 (test dependency_context) ###")
+#         output_3 = await run_worker(
+#             task_dependent,
+#             user_request,
+#             completed_outputs=[output_1],
+#         )
+#         _print_output(output_3)
 
-    asyncio.run(_debug())
+#     asyncio.run(_debug())

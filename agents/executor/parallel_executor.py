@@ -95,51 +95,51 @@ async def execute_plan(
 # + Tavily thật cho các task requires_research=True).
 # ============================================================
 
-if __name__ == "__main__":
-    from agents.planner import run_planner
+# if __name__ == "__main__":
+#     from agents.planner import run_planner
 
-    async def _debug():
-        print("=" * 60)
-        print("DEBUG: Test Parallel Executor (full pipeline)")
-        print("=" * 60)
+#     async def _debug():
+#         print("=" * 60)
+#         print("DEBUG: Test Parallel Executor (full pipeline)")
+#         print("=" * 60)
 
-        user_request = UserRequest(
-            topic="MCP (Model Context Protocol) cho AI Engineer",
-            article_type="blog",
-            target_audience="AI Engineer",
-            tone="technical",
-            language="vi",
-            raw_input="Viết một bài blog bằng tiếng Việt về MCP cho AI Engineer, có so sánh với cách tích hợp tool truyền thống.",
-        )
+#         user_request = UserRequest(
+#             topic="MCP (Model Context Protocol) cho AI Engineer",
+#             article_type="blog",
+#             target_audience="AI Engineer",
+#             tone="technical",
+#             language="vi",
+#             raw_input="Viết một bài blog bằng tiếng Việt về MCP cho AI Engineer, có so sánh với cách tích hợp tool truyền thống.",
+#         )
 
-        supervisor_decision = SupervisorDecision(
-            mode="hybrid",
-            reasoning="Cần kiến thức nền tảng về MCP + thông tin cập nhật để so sánh.",
-            research_queries=["Model Context Protocol architecture"],
-            language="vi",
-        )
+#         supervisor_decision = SupervisorDecision(
+#             mode="hybrid",
+#             reasoning="Cần kiến thức nền tảng về MCP + thông tin cập nhật để so sánh.",
+#             research_queries=["Model Context Protocol architecture"],
+#             language="vi",
+#         )
 
-        print("\n📋 Đang tạo Plan...")
-        plan = await run_planner(user_request, supervisor_decision)
-        print(f"✅ Plan có {len(plan.tasks)} tasks.")
-        for task in plan.tasks:
-            deps = task.depends_on or "—"
-            print(f"   [{task.id}] {task.title} (depends_on: {deps})")
+#         print("\n📋 Đang tạo Plan...")
+#         plan = await run_planner(user_request, supervisor_decision)
+#         print(f"✅ Plan có {len(plan.tasks)} tasks.")
+#         for task in plan.tasks:
+#             deps = task.depends_on or "—"
+#             print(f"   [{task.id}] {task.title} (depends_on: {deps})")
 
-        print("\n⚙️  Đang chạy Executor...")
-        outputs = await execute_plan(plan, user_request, supervisor_decision)
+#         print("\n⚙️  Đang chạy Executor...")
+#         outputs = await execute_plan(plan, user_request, supervisor_decision)
 
-        print("\n" + "=" * 60)
-        print("KẾT QUẢ CUỐI CÙNG (đã sắp xếp theo order)")
-        print("=" * 60)
+#         print("\n" + "=" * 60)
+#         print("KẾT QUẢ CUỐI CÙNG (đã sắp xếp theo order)")
+#         print("=" * 60)
 
-        for output in outputs:
-            status = "✅" if output.success else "❌ LỖI"
-            print(f"\n[{output.task_id}] {status} - {output.title}")
-            if output.success:
-                print(f"   Used research: {output.used_research}")
-                print(f"   Content preview: {output.content[:150]}...")
-            else:
-                print(f"   Error: {output.error}")
+#         for output in outputs:
+#             status = "✅" if output.success else "❌ LỖI"
+#             print(f"\n[{output.task_id}] {status} - {output.title}")
+#             if output.success:
+#                 print(f"   Used research: {output.used_research}")
+#                 print(f"   Content preview: {output.content[:150]}...")
+#             else:
+#                 print(f"   Error: {output.error}")
 
-    asyncio.run(_debug())
+#     asyncio.run(_debug())

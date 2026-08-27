@@ -11,6 +11,7 @@ Luồng đi qua các node:
     Planner           → update plan
     HITL              → update hitl, approved_plan
     Executor (fan-out)→ update worker_outputs
+    Image Resolver    → update image_specs
     Synthesizer       → update final_article
     Evaluator         → update evaluation, revision_count
 """
@@ -21,6 +22,7 @@ from typing import Annotated, TypedDict
 from agents.schemas.evaluation import Evaluation
 from agents.schemas.guardrail import GuardrailResult
 from agents.schemas.hitl import HITLDecision
+from agents.schemas.image import ImageSpec
 from agents.schemas.article import FinalArticle
 from agents.schemas.plan import Plan
 from agents.schemas.supervisor import SupervisorDecision
@@ -126,6 +128,24 @@ class WriterState(TypedDict):
         list[WorkerOutput],
         operator.add,
     ]
+
+    # ========================================================
+    # IMAGE RESOLVER
+    # ========================================================
+    #
+    # Danh sách ImageSpec đã resolve từ image_queries của các
+    # WorkerOutput (chạy sau Executor, trước Synthesizer).
+    #
+    # KHÔNG dùng operator.add vì image_resolver chạy 1 LẦN DUY NHẤT
+    # cho toàn bộ danh sách worker_outputs (không phải fan-out theo
+    # từng task như worker_outputs), nên chỉ cần ghi đè bình thường.
+    #
+    # Khi Synthesizer bị gọi lại (revision), image_specs giữ nguyên
+    # không cần resolve lại (ảnh không phụ thuộc vào việc viết lại
+    # văn bản, trừ khi sau này muốn tối ưu thêm).
+    # ========================================================
+
+    image_specs: list[ImageSpec]
 
     # ========================================================
     # FINAL ARTICLE

@@ -31,7 +31,7 @@ class PlannerAgent(BaseAgent):
             output_schema=Plan,
             # Planner dễ bị sai logic (depends_on cycle, task_id sai) hơn
             # các node khác vì output phức tạp -> cho retry nhiều hơn 1 lần.
-            max_json_retries=2,
+            max_retries=2,
         )
 
 

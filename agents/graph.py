@@ -54,7 +54,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
 
 from agents.evaluator import run_evaluator
-from agents.executor import execute_plan
+from agents.executor import execute_plan, resolve_images
 from agents.hitl_handler import wait_for_hitl_decision
 from agents.input_guardrails import check_input
 from agents.planner import run_planner
@@ -177,6 +177,14 @@ async def executor_node(state: WriterState) -> dict:
     return {"worker_outputs": outputs}
 
 
+async def image_resolver_node(state: WriterState) -> dict:
+    print(f"\n{'=' * 60}\n[NODE] Image Resolver\n{'=' * 60}")
+
+    specs = await resolve_images(state["worker_outputs"])
+
+    return {"image_specs": specs}
+
+
 async def synthesizer_node(state: WriterState) -> dict:
     print(f"\n{'=' * 60}\n[NODE] Synthesizer (revision_count={state['revision_count']})\n{'=' * 60}")
 
@@ -189,6 +197,7 @@ async def synthesizer_node(state: WriterState) -> dict:
             plan=state["approved_plan"],
             worker_outputs=state["worker_outputs"],
             user_request=state["user_request"],
+            image_specs=state.get("image_specs") or [],
             revision_feedback=revision_feedback,
             previous_article=previous_article,
         )
@@ -257,6 +266,7 @@ def build_graph_builder() -> StateGraph:
     builder.add_node("planner", planner_node)
     builder.add_node("hitl", hitl_node)
     builder.add_node("executor", executor_node)
+    builder.add_node("image_resolver", image_resolver_node)
     builder.add_node("synthesizer", synthesizer_node)
     builder.add_node("evaluator", evaluator_node)
     builder.add_node("save_output", save_output_node)
@@ -272,7 +282,8 @@ def build_graph_builder() -> StateGraph:
     builder.add_conditional_edges(
         "hitl", route_after_hitl, {"executor": "executor", "planner": "planner"}
     )
-    builder.add_edge("executor", "synthesizer")
+    builder.add_edge("executor", "image_resolver")
+    builder.add_edge("image_resolver", "synthesizer")
     builder.add_conditional_edges(
         "synthesizer", route_after_synthesizer, {"evaluator": "evaluator", "failed": END}
     )
@@ -311,6 +322,7 @@ def build_initial_state(user_request: UserRequest, workflow_id: str) -> WriterSt
         "hitl": None,
         "plan_revision_count": 0,
         "worker_outputs": [],
+        "image_specs": [],
         "final_article": None,
         "evaluation": None,
         "revision_count": 0,

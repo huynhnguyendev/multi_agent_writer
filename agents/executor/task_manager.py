@@ -119,74 +119,74 @@ def get_dependency_context(
 #   python -m agents.executor.task_manager
 # ============================================================
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    def _make_task(task_id: str, depends_on: list[str] | None = None) -> Task:
-        return Task(
-            id=task_id,
-            title=f"Task {task_id}",
-            description="mô tả test",
-            objective="mục tiêu test",
-            expected_output="output test",
-            depends_on=depends_on or [],
-        )
+#     def _make_task(task_id: str, depends_on: list[str] | None = None) -> Task:
+#         return Task(
+#             id=task_id,
+#             title=f"Task {task_id}",
+#             description="mô tả test",
+#             objective="mục tiêu test",
+#             expected_output="output test",
+#             depends_on=depends_on or [],
+#         )
 
-    print("=" * 60)
-    print("DEBUG: Test build_execution_batches")
-    print("=" * 60)
+#     print("=" * 60)
+#     print("DEBUG: Test build_execution_batches")
+#     print("=" * 60)
 
-    # Case 1: giống hệt plan thực tế đã test ở Planner
-    tasks_case_1 = [
-        _make_task("task_01"),
-        _make_task("task_02", ["task_01"]),
-        _make_task("task_03", ["task_02"]),
-        _make_task("task_04", ["task_02"]),
-        _make_task("task_05", ["task_03", "task_04"]),
-    ]
+#     # Case 1: giống hệt plan thực tế đã test ở Planner
+#     tasks_case_1 = [
+#         _make_task("task_01"),
+#         _make_task("task_02", ["task_01"]),
+#         _make_task("task_03", ["task_02"]),
+#         _make_task("task_04", ["task_02"]),
+#         _make_task("task_05", ["task_03", "task_04"]),
+#     ]
 
-    print("\n--- Case 1: DAG nhiều tầng (giống plan thực tế) ---")
-    batches = build_execution_batches(tasks_case_1)
-    for i, batch in enumerate(batches, start=1):
-        print(f"Batch {i}: {[t.id for t in batch]}")
+#     print("\n--- Case 1: DAG nhiều tầng (giống plan thực tế) ---")
+#     batches = build_execution_batches(tasks_case_1)
+#     for i, batch in enumerate(batches, start=1):
+#         print(f"Batch {i}: {[t.id for t in batch]}")
 
-    # Case 2: tất cả độc lập -> phải ra đúng 1 batch duy nhất chứa hết
-    tasks_case_2 = [_make_task(f"task_0{i}") for i in range(1, 6)]
-    print("\n--- Case 2: Tất cả task độc lập ---")
-    batches = build_execution_batches(tasks_case_2)
-    for i, batch in enumerate(batches, start=1):
-        print(f"Batch {i}: {[t.id for t in batch]}")
-    assert len(batches) == 1 and len(batches[0]) == 5, "❌ Case 2 sai!"
-    print("✅ Case 2 đúng: chỉ có 1 batch chứa cả 5 task.")
+#     # Case 2: tất cả độc lập -> phải ra đúng 1 batch duy nhất chứa hết
+#     tasks_case_2 = [_make_task(f"task_0{i}") for i in range(1, 6)]
+#     print("\n--- Case 2: Tất cả task độc lập ---")
+#     batches = build_execution_batches(tasks_case_2)
+#     for i, batch in enumerate(batches, start=1):
+#         print(f"Batch {i}: {[t.id for t in batch]}")
+#     assert len(batches) == 1 and len(batches[0]) == 5, "❌ Case 2 sai!"
+#     print("✅ Case 2 đúng: chỉ có 1 batch chứa cả 5 task.")
 
-    # Case 3: chuỗi tuần tự hoàn toàn -> mỗi batch chỉ có 1 task
-    tasks_case_3 = [
-        _make_task("task_01"),
-        _make_task("task_02", ["task_01"]),
-        _make_task("task_03", ["task_02"]),
-    ]
-    print("\n--- Case 3: Chuỗi tuần tự (mỗi batch 1 task) ---")
-    batches = build_execution_batches(tasks_case_3)
-    for i, batch in enumerate(batches, start=1):
-        print(f"Batch {i}: {[t.id for t in batch]}")
-    assert len(batches) == 3, "❌ Case 3 sai!"
-    print("✅ Case 3 đúng: 3 batch riêng biệt.")
+#     # Case 3: chuỗi tuần tự hoàn toàn -> mỗi batch chỉ có 1 task
+#     tasks_case_3 = [
+#         _make_task("task_01"),
+#         _make_task("task_02", ["task_01"]),
+#         _make_task("task_03", ["task_02"]),
+#     ]
+#     print("\n--- Case 3: Chuỗi tuần tự (mỗi batch 1 task) ---")
+#     batches = build_execution_batches(tasks_case_3)
+#     for i, batch in enumerate(batches, start=1):
+#         print(f"Batch {i}: {[t.id for t in batch]}")
+#     assert len(batches) == 3, "❌ Case 3 sai!"
+#     print("✅ Case 3 đúng: 3 batch riêng biệt.")
 
-    # Test get_dependency_context
-    print("\n" + "=" * 60)
-    print("DEBUG: Test get_dependency_context")
-    print("=" * 60)
+#     # Test get_dependency_context
+#     print("\n" + "=" * 60)
+#     print("DEBUG: Test get_dependency_context")
+#     print("=" * 60)
 
-    fake_outputs = [
-        WorkerOutput(task_id="task_01", title="Giới thiệu", content="Nội dung task 1...", success=True),
-        WorkerOutput(task_id="task_02", title="Kiến trúc", content="Nội dung task 2...", success=False, error="LLM timeout"),
-    ]
+#     fake_outputs = [
+#         WorkerOutput(task_id="task_01", title="Giới thiệu", content="Nội dung task 1...", success=True),
+#         WorkerOutput(task_id="task_02", title="Kiến trúc", content="Nội dung task 2...", success=False, error="LLM timeout"),
+#     ]
 
-    task_05 = _make_task("task_05", ["task_01", "task_02"])
-    context = get_dependency_context(task_05, fake_outputs)
+#     task_05 = _make_task("task_05", ["task_01", "task_02"])
+#     context = get_dependency_context(task_05, fake_outputs)
 
-    print(f"\nDependency context cho task_05 (task_02 bị lỗi, phải bị bỏ qua):")
-    for item in context:
-        print(f"  - {item['title']}: {item['content'][:50]}...")
+#     print(f"\nDependency context cho task_05 (task_02 bị lỗi, phải bị bỏ qua):")
+#     for item in context:
+#         print(f"  - {item['title']}: {item['content'][:50]}...")
 
-    assert len(context) == 1 and context[0]["title"] == "Giới thiệu", "❌ Lỗi filter task thất bại!"
-    print("\n✅ Đúng: chỉ lấy được context của task_01 (thành công), bỏ qua task_02 (lỗi).")
+#     assert len(context) == 1 and context[0]["title"] == "Giới thiệu", "❌ Lỗi filter task thất bại!"
+#     print("\n✅ Đúng: chỉ lấy được context của task_01 (thành công), bỏ qua task_02 (lỗi).")

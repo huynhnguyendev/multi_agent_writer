@@ -137,27 +137,80 @@ class BaseAgent:
         return str(content)
 
     @staticmethod
-    def _extract_json(text: str) -> dict:
+    def _fix_invalid_escapes(text: str) -> str:
+        r"""
+        Sửa các backslash không hợp lệ trong JSON string.
+
+        LLM (đặc biệt khi sinh markdown dài) đôi khi chèn backslash
+        không thuộc bộ escape hợp lệ của JSON (chỉ có: \" \\ \/ \b \f
+        \n \r \t \uXXXX). Ví dụ markdown dùng "\_" hoặc "\*" để escape
+        ký tự đặc biệt sẽ làm json.loads() báo lỗi "Invalid \escape".
+
+        Hàm này quét qua text, gặp backslash không theo sau bởi ký tự
+        escape hợp lệ thì tự động escape lại backslash đó (thành \\),
+        để JSON parser hiểu đó là 1 dấu backslash literal.
+        """
+        valid_escape_chars = set('"\\/bfnrtu')
+        result = []
+        i = 0
+        length = len(text)
+
+        while i < length:
+            char = text[i]
+            if char == "\\" and i + 1 < length:
+                next_char = text[i + 1]
+                if next_char in valid_escape_chars:
+                    result.append(char)
+                    result.append(next_char)
+                    i += 2
+                    continue
+                else:
+                    # Backslash không hợp lệ -> escape lại thành \\
+                    result.append("\\\\")
+                    i += 1
+                    continue
+            result.append(char)
+            i += 1
+
+        return "".join(result)
+    @classmethod
+    def _try_parse(cls, candidate: str) -> dict | None:
+        """
+        Thử parse JSON, nếu lỗi do invalid escape thì tự sửa và thử
+        lại 1 lần. Trả về None nếu vẫn thất bại (để caller thử cách khác).
+        """
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as e:
+            if "Invalid \\escape" in str(e):
+                try:
+                    fixed = cls._fix_invalid_escapes(candidate)
+                    return json.loads(fixed)
+                except json.JSONDecodeError:
+                    return None
+            return None
+
+    @classmethod
+    def _extract_json(cls, text: str) -> dict:
         """
         Trích JSON object từ raw text response của LLM.
 
         LLM đôi khi bọc JSON trong ```json ... ``` hoặc thêm text thừa
         trước/sau, nên cần tìm đoạn JSON object đầu tiên (từ '{' tới '}'
-        khớp nhau) thay vì json.loads() trực tiếp toàn bộ text.
+        khớp nhau) thay vì json.loads() trực tiếp toàn bộ text. Mỗi
+        bước thử parse đều có fallback tự sửa invalid escape.
         """
         # Thử parse trực tiếp trước (trường hợp LLM trả JSON sạch)
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
+        result = cls._try_parse(text)
+        if result is not None:
+            return result
 
         # Bóc markdown code fence nếu có (```json ... ``` hoặc ``` ... ```)
         fence_match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
         if fence_match:
-            try:
-                return json.loads(fence_match.group(1))
-            except json.JSONDecodeError:
-                pass
+            result = cls._try_parse(fence_match.group(1))
+            if result is not None:
+                return result
 
         # Fallback: tìm object JSON đầu tiên bằng cách đếm ngoặc {} khớp nhau
         start = text.find("{")
@@ -171,6 +224,11 @@ class BaseAgent:
             elif text[i] == "}":
                 depth -= 1
                 if depth == 0:
-                    return json.loads(text[start : i + 1])
+                    candidate = text[start : i + 1]
+                    result = cls._try_parse(candidate)
+                    if result is not None:
+                        return result
+                    # Đã thử cả sửa escape mà vẫn lỗi -> raise lỗi gốc
+                    return json.loads(candidate)
 
         raise json.JSONDecodeError("JSON object không đóng ngoặc hợp lệ", text, start)

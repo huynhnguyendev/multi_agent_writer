@@ -12,8 +12,10 @@ Trách nhiệm của 1 Worker:
 Error handling: theo chiến lược "bỏ qua và log lỗi" - nếu có lỗi ở
 bất kỳ bước nào (research fail, LLM fail...), Worker KHÔNG raise
 exception ra ngoài mà trả về WorkerOutput(success=False, error=...).
-Có retry nội bộ tối đa MAX_WORKER_RETRIES lần cho các lỗi tạm thời
-trước khi đánh dấu thất bại hẳn.
+Có retry nội bộ tối đa MAX_WORKER_RETRIES lần cho các lỗi tạm thời,
+kèm delay (backoff) giữa các lần retry để tránh dính lại đúng rate
+limit TPM của Groq (free tier) khi nhiều worker chạy song song
+trong cùng 1 batch, trước khi đánh dấu thất bại hẳn.
 """
 
 import asyncio
@@ -30,6 +32,10 @@ from agents.schemas.worker import WorkerOutput
 from agents.tools import tavily_search
 
 MAX_WORKER_RETRIES = 2
+
+# Delay (giây) trước mỗi lần retry, để "hồi" lại token budget/phút của
+# Groq free tier trước khi thử lại (tránh dính lại đúng rate limit).
+WORKER_RETRY_BACKOFF_SECONDS = 8
 
 # Giới hạn số research_queries thực sự đi search (tránh 1 task có quá
 # nhiều query làm tốn thời gian/chi phí), theo đúng field research_queries
@@ -146,6 +152,10 @@ async def run_worker(
     Entry point chính của 1 Worker. Retry tối đa MAX_WORKER_RETRIES lần
     nếu gặp lỗi, trước khi đánh dấu WorkerOutput(success=False).
 
+    Có delay (backoff) giữa các lần retry (KHÔNG delay trước lần thử
+    đầu tiên, và KHÔNG delay sau lần thử cuối cùng vì sắp trả kết quả
+    thất bại luôn rồi, delay lúc đó chỉ tốn thời gian vô ích).
+
     KHÔNG BAO GIỜ raise exception ra ngoài - đây là node cần đảm bảo
     Executor có thể chạy song song nhiều worker mà 1 worker lỗi không
     làm sập cả batch (theo chiến lược "bỏ qua và log lỗi").
@@ -163,6 +173,14 @@ async def run_worker(
             print(
                 f"⚠️  [worker:{task.id}] Lần thử {attempt + 1} thất bại: {e}"
             )
+
+            is_last_attempt = attempt == MAX_WORKER_RETRIES
+            if not is_last_attempt:
+                print(
+                    f"   ⏳ Chờ {WORKER_RETRY_BACKOFF_SECONDS}s trước khi retry "
+                    "(tránh dính lại rate limit)..."
+                )
+                await asyncio.sleep(WORKER_RETRY_BACKOFF_SECONDS)
 
     print(f"❌ [worker:{task.id}] Thất bại hẳn sau {MAX_WORKER_RETRIES + 1} lần thử.")
     return WorkerOutput(

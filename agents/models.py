@@ -13,7 +13,7 @@ Cách dùng:
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -32,6 +32,14 @@ class ModelConfig:
     provider: str  # "groq" | "gemini"
     model_name: str
     temperature: float = 0.3
+    max_tokens: int | None = None
+
+    # Chỉ áp dụng cho các model GPT-OSS trên Groq (worker, research_worker,
+    # fallback). "low" giúp model dành ít token hơn cho việc "suy nghĩ",
+    # tránh trường hợp reasoning ngốn hết token budget khiến content
+    # trả về bị RỖNG (đặc biệt với các task có prompt dài, ví dụ task có
+    # nhiều dependency_context). None = không set (model tự quyết định).
+    reasoning_effort: str | None = None
 
 
 # ============================================================
@@ -41,7 +49,7 @@ class ModelConfig:
 MODEL_REGISTRY: dict[str, ModelConfig] = {
     "input_guardrails": ModelConfig(
         provider="groq",
-        model_name="openai/gpt-oss-safeguard-20b",
+        model_name="meta-llama/llama-prompt-guard-2-86m",
         temperature=0.0,
     ),
     "supervisor": ModelConfig(
@@ -58,11 +66,15 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
         provider="groq",
         model_name="openai/gpt-oss-20b",
         temperature=0.5,
+        max_tokens=2048,
+        reasoning_effort="low",
     ),
     "research_worker": ModelConfig(
         provider="groq",
         model_name="openai/gpt-oss-20b",
         temperature=0.5,
+        max_tokens=2048,
+        reasoning_effort="low",
     ),
     "synthesizer": ModelConfig(
         provider="gemini",
@@ -78,6 +90,8 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
         provider="groq",
         model_name="openai/gpt-oss-120b",
         temperature=0.5,
+        max_tokens=2048,
+        reasoning_effort="low",
     ),
 }
 
@@ -95,15 +109,26 @@ def get_model_config(role: str) -> ModelConfig:
 def get_llm(role: str):
     """
     Trả về instance LLM (LangChain chat model) tương ứng với role.
+
+    Lưu ý: role "input_guardrails" dùng model classifier
+    (llama-prompt-guard-2-86m), KHÔNG phải chat model sinh JSON như
+    các role khác. Model này sẽ được gọi theo cách riêng ở
+    input_guardrails.py (không dùng qua BaseAgent.run() thông thường).
     """
     config = get_model_config(role)
 
     if config.provider == "groq":
-        return ChatGroq(
-            model=config.model_name,
-            temperature=config.temperature,
-            api_key=GROQ_API_KEY,
-        )
+        kwargs = {
+            "model": config.model_name,
+            "temperature": config.temperature,
+            "api_key": GROQ_API_KEY,
+        }
+        if config.max_tokens is not None:
+            kwargs["max_tokens"] = config.max_tokens
+        if config.reasoning_effort is not None:
+            kwargs["reasoning_effort"] = config.reasoning_effort
+
+        return ChatGroq(**kwargs)
 
     if config.provider == "gemini":
         return ChatGoogleGenerativeAI(

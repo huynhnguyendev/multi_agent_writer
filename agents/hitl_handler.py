@@ -207,58 +207,58 @@ async def wait_for_hitl_decision(
 #   - Không gõ gì, đợi hết 60s (hoặc sửa timeout_seconds=10 để test nhanh)
 # ============================================================
 
-if __name__ == "__main__":
-    from agents.schemas.plan import Task
+# if __name__ == "__main__":
+#     from agents.schemas.plan import Task
 
-    async def _debug():
-        sample_plan = Plan(
-            title="MCP cho AI Engineer",
-            objective="Giải thích MCP và ứng dụng thực tế",
-            target_audience="AI Engineer",
-            tone="technical",
-            estimated_sections=3,
-            tasks=[
-                Task(
-                    id="task_01",
-                    title="Giới thiệu MCP",
-                    description="Giải thích MCP là gì",
-                    objective="Người đọc hiểu khái niệm cơ bản",
-                    expected_output="~300 từ",
-                ),
-                Task(
-                    id="task_02",
-                    title="Kiến trúc MCP",
-                    description="Giải thích client/server/host",
-                    objective="Người đọc hiểu kiến trúc",
-                    expected_output="~400 từ",
-                    depends_on=["task_01"],
-                ),
-                Task(
-                    id="task_03",
-                    title="Kết luận",
-                    description="Tổng kết bài viết",
-                    objective="Chốt lại ý chính",
-                    expected_output="~150 từ",
-                    depends_on=["task_02"],
-                ),
-            ],
-        )
+#     async def _debug():
+#         sample_plan = Plan(
+#             title="MCP cho AI Engineer",
+#             objective="Giải thích MCP và ứng dụng thực tế",
+#             target_audience="AI Engineer",
+#             tone="technical",
+#             estimated_sections=3,
+#             tasks=[
+#                 Task(
+#                     id="task_01",
+#                     title="Giới thiệu MCP",
+#                     description="Giải thích MCP là gì",
+#                     objective="Người đọc hiểu khái niệm cơ bản",
+#                     expected_output="~300 từ",
+#                 ),
+#                 Task(
+#                     id="task_02",
+#                     title="Kiến trúc MCP",
+#                     description="Giải thích client/server/host",
+#                     objective="Người đọc hiểu kiến trúc",
+#                     expected_output="~400 từ",
+#                     depends_on=["task_01"],
+#                 ),
+#                 Task(
+#                     id="task_03",
+#                     title="Kết luận",
+#                     description="Tổng kết bài viết",
+#                     objective="Chốt lại ý chính",
+#                     expected_output="~150 từ",
+#                     depends_on=["task_02"],
+#                 ),
+#             ],
+#         )
 
-        print("=" * 60)
-        print("DEBUG: Test HITL Handler")
-        print("=" * 60)
-        print("💡 Tip: sửa timeout_seconds=10 trong code nếu muốn test nhanh case timeout.")
+#         print("=" * 60)
+#         print("DEBUG: Test HITL Handler")
+#         print("=" * 60)
+#         print("💡 Tip: sửa timeout_seconds=10 trong code nếu muốn test nhanh case timeout.")
 
-        decision, final_plan = await wait_for_hitl_decision(sample_plan, timeout_seconds=60)
+#         decision, final_plan = await wait_for_hitl_decision(sample_plan, timeout_seconds=60)
 
-        print("\n" + "=" * 60)
-        print("KẾT QUẢ HITL")
-        print("=" * 60)
-        print(f"Action              : {decision.action}")
-        print(f"Approved            : {decision.approved}")
-        print(f"Edited              : {decision.edited}")
-        print(f"Feedback            : {decision.feedback}")
-        print(f"Response time (s)   : {decision.response_time_seconds}")
-        print(f"\nPlan title cuối cùng: {final_plan.title}")
+#         print("\n" + "=" * 60)
+#         print("KẾT QUẢ HITL")
+#         print("=" * 60)
+#         print(f"Action              : {decision.action}")
+#         print(f"Approved            : {decision.approved}")
+#         print(f"Edited              : {decision.edited}")
+#         print(f"Feedback            : {decision.feedback}")
+#         print(f"Response time (s)   : {decision.response_time_seconds}")
+#         print(f"\nPlan title cuối cùng: {final_plan.title}")
 
-    asyncio.run(_debug())
+#     asyncio.run(_debug())

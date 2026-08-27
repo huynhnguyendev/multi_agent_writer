@@ -23,15 +23,21 @@ Ví dụ:
     accepted                 = True
 
 Quy tắc chấp nhận:
-    overall_score >= 9  → accepted = True  → kết thúc workflow
-    overall_score <  9  → accepted = False → quay lại Synthesizer
-                                              (tối đa 5 lần retry)
+
+    overall_score >= 8.0
+        → accepted = True
+        → kết thúc workflow
+
+    overall_score < 8.0
+        → accepted = False
+        → quay lại Synthesizer
+        → tối đa 5 lần revision
 """
 
 from pydantic import BaseModel, Field, model_validator
 
 # Ngưỡng điểm để bài viết được chấp nhận (theo yêu cầu của bạn).
-ACCEPTANCE_THRESHOLD = 9.0
+ACCEPTANCE_THRESHOLD = 8.0
 
 # Số lần revision tối đa trước khi buộc chấp nhận bài viết
 # dù điểm thấp hơn ngưỡng (theo yêu cầu của bạn).

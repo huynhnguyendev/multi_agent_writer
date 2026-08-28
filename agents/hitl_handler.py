@@ -25,8 +25,7 @@ import time
 
 from pydantic import ValidationError
 
-from agents.schemas.hitl import HITLDecision
-from agents.schemas.plan import Plan
+from agents.schemas import HITLDecision, Plan
 
 HITL_TIMEOUT_SECONDS = 60
 

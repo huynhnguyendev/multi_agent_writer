@@ -12,8 +12,7 @@ import re
 
 import yaml
 
-from agents.schemas.image import ImageCandidate
-from agents.schemas.research import ResearchResult, ResearchSource
+from agents.schemas import ImageCandidate, ResearchResult, ResearchSource
 
 
 # ============================================================

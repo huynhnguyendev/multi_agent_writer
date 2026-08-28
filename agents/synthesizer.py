@@ -27,13 +27,8 @@ from datetime import datetime
 from pathlib import Path
 
 from pydantic import BaseModel, Field
-
 from agents.base_agent import BaseAgent, LLMOutputError
-from agents.schemas.article import FinalArticle
-from agents.schemas.image import ImageSpec
-from agents.schemas.plan import Plan
-from agents.schemas.user_request import UserRequest
-from agents.schemas.worker import WorkerOutput
+from agents.schemas import FinalArticle, ImageSpec, Plan, UserRequest, WorkerOutput
 
 # ============================================================
 # OUTPUT DIRECTORY - nơi lưu file .md khi bài viết được Evaluator duyệt

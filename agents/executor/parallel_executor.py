@@ -15,10 +15,7 @@ import asyncio
 
 from agents.executor.task_manager import build_execution_batches
 from agents.executor.worker import run_worker
-from agents.schemas.plan import Plan
-from agents.schemas.supervisor import SupervisorDecision
-from agents.schemas.user_request import UserRequest
-from agents.schemas.worker import WorkerOutput
+from agents.schemas import Plan, SupervisorDecision, UserRequest, WorkerOutput
 
 
 async def execute_plan(

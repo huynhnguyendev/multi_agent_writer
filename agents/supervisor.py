@@ -10,8 +10,7 @@ Dùng BaseAgent pattern (render prompt YAML -> gọi LLM -> parse JSON
 """
 
 from agents.base_agent import BaseAgent, LLMOutputError
-from agents.schemas.supervisor import SupervisorDecision
-from agents.schemas.user_request import UserRequest
+from agents.schemas import SupervisorDecision, UserRequest
 
 
 class SupervisorAgent(BaseAgent):

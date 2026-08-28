@@ -65,9 +65,7 @@ from agents.hitl_handler import wait_for_hitl_decision
 from agents.input_guardrails import check_input
 from agents.logger import get_workflow_logger, log_node_end, log_node_error, log_node_start
 from agents.planner import run_planner
-from agents.schemas.evaluation import MAX_REVISIONS
-from agents.schemas.state import WriterState
-from agents.schemas.user_request import UserRequest
+from agents.schemas import MAX_REVISIONS, WriterState, UserRequest
 from agents.supervisor import run_supervisor
 from agents.synthesizer import run_synthesizer, save_article_to_markdown
 from agents.base_agent import LLMOutputError

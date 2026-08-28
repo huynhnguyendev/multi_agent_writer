@@ -13,8 +13,7 @@ làm fail cả task (khác với lỗi LLM/research ở Worker).
 
 import asyncio
 
-from agents.schemas.image import ImageCandidate, ImageSpec
-from agents.schemas.worker import WorkerOutput
+from agents.schemas import ImageCandidate, ImageSpec, WorkerOutput
 from agents.tools import search_wikimedia_images
 
 # Chỉ lấy query ĐẦU TIÊN mà Worker đề xuất cho mỗi task (Worker có thể

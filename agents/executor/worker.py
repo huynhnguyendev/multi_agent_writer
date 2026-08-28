@@ -24,11 +24,7 @@ from pydantic import BaseModel, Field
 
 from agents.base_agent import BaseAgent, LLMOutputError
 from agents.executor.task_manager import get_dependency_context
-from agents.schemas.plan import Task
-from agents.schemas.research import ResearchSource
-from agents.schemas.supervisor import SupervisorDecision
-from agents.schemas.user_request import UserRequest
-from agents.schemas.worker import WorkerOutput
+from agents.schemas import Task, ResearchSource, SupervisorDecision, UserRequest, WorkerOutput
 from agents.tools import tavily_search
 
 MAX_WORKER_RETRIES = 2

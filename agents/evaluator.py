@@ -11,9 +11,7 @@ Dùng BaseAgent pattern (render prompt YAML -> gọi LLM -> parse JSON
 """
 
 from agents.base_agent import BaseAgent, LLMOutputError
-from agents.schemas.article import FinalArticle
-from agents.schemas.evaluation import Evaluation
-from agents.schemas.user_request import UserRequest
+from agents.schemas import FinalArticle, Evaluation, UserRequest
 
 # ============================================================
 # UPDATE:

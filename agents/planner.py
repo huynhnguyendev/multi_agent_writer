@@ -16,9 +16,7 @@ thêm feedback để Planner tạo lại plan tốt hơn).
 """
 
 from agents.base_agent import BaseAgent, LLMOutputError
-from agents.schemas.plan import Plan
-from agents.schemas.supervisor import SupervisorDecision
-from agents.schemas.user_request import UserRequest
+from agents.schemas import Plan, SupervisorDecision, UserRequest
 
 
 class PlannerAgent(BaseAgent):

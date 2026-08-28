@@ -13,9 +13,7 @@ không cần validate lại, chỉ cần thực hiện thuật toán Kahn's algo
 thuần túy.
 """
 
-from agents.schemas.plan import Task
-from agents.schemas.worker import WorkerOutput
-
+from agents.schemas import Task, WorkerOutput
 
 def build_execution_batches(tasks: list[Task]) -> list[list[Task]]:
     """

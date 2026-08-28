@@ -18,38 +18,31 @@ limit TPM của Groq (free tier) khi nhiều worker chạy song song
 trong cùng 1 batch, trước khi đánh dấu thất bại hẳn.
 """
 
+"""
+... (giữ nguyên docstring cũ) ...
+"""
+
 import asyncio
 
 from pydantic import BaseModel, Field
 
 from agents.base_agent import BaseAgent, LLMOutputError
 from agents.executor.task_manager import get_dependency_context
-from agents.schemas import Task, ResearchSource, SupervisorDecision, UserRequest, WorkerOutput
+from agents.hooks import notify_task_update
+from agents.schemas.plan import Task
+from agents.schemas.research import ResearchSource
+from agents.schemas.supervisor import SupervisorDecision
+from agents.schemas.user_request import UserRequest
+from agents.schemas.worker import WorkerOutput
 from agents.tools import tavily_search
 
 MAX_WORKER_RETRIES = 2
-
-# Delay (giây) trước mỗi lần retry, để "hồi" lại token budget/phút của
-# Groq free tier trước khi thử lại (tránh dính lại đúng rate limit).
 WORKER_RETRY_BACKOFF_SECONDS = 8
-
-# Giới hạn số research_queries thực sự đi search (tránh 1 task có quá
-# nhiều query làm tốn thời gian/chi phí), theo đúng field research_queries
-# mà Planner đã đề xuất trong Task.
 MAX_RESEARCH_QUERIES_PER_TASK = 2
 MAX_RESULTS_PER_QUERY = 3
 
 
 class _WorkerLLMOutput(BaseModel):
-    """
-    Schema NỘI BỘ chỉ dùng để parse/validate output thô của LLM.
-
-    Khác với WorkerOutput (schema chính thức của toàn bộ hệ thống),
-    schema này KHÔNG có task_id, sources, success, error, retry_count
-    - những field đó do code (không phải LLM) tự điền vào sau khi
-    LLM trả lời xong.
-    """
-
     title: str
     content: str
     used_research: bool = False
@@ -57,8 +50,6 @@ class _WorkerLLMOutput(BaseModel):
 
 
 class WorkerAgent(BaseAgent):
-    """Agent viết nội dung cho 1 task, dùng chung cho cả research/no-research."""
-
     def __init__(self, model_role: str = "worker"):
         super().__init__(
             prompt_name="worker",
@@ -67,17 +58,11 @@ class WorkerAgent(BaseAgent):
         )
 
 
-# 2 instance riêng biệt theo đúng MODEL_REGISTRY (hiện tại cùng model,
-# nhưng tách sẵn để sau này dễ đổi model riêng cho research_worker).
 _worker_agent = WorkerAgent(model_role="worker")
 _research_worker_agent = WorkerAgent(model_role="research_worker")
 
 
 async def _gather_research(task: Task) -> list[ResearchSource]:
-    """
-    Gọi Tavily search cho từng research_query của task (giới hạn số
-    lượng query để tránh tốn kém), gộp lại và loại bỏ source trùng URL.
-    """
     queries = task.research_queries[:MAX_RESEARCH_QUERIES_PER_TASK]
     if not queries:
         return []
@@ -103,7 +88,6 @@ async def _run_worker_once(
     supervisor: SupervisorDecision | None,
     completed_outputs: list[WorkerOutput],
 ) -> WorkerOutput:
-    """Chạy 1 lần xử lý task (không retry). Có thể raise exception."""
     sources: list[ResearchSource] = []
     if task.requires_research:
         sources = await _gather_research(task)
@@ -143,32 +127,37 @@ async def run_worker(
     user_request: UserRequest,
     supervisor: SupervisorDecision | None = None,
     completed_outputs: list[WorkerOutput] | None = None,
+    workflow_id: str | None = None,
 ) -> WorkerOutput:
     """
     Entry point chính của 1 Worker. Retry tối đa MAX_WORKER_RETRIES lần
-    nếu gặp lỗi, trước khi đánh dấu WorkerOutput(success=False).
+    nếu gặp lỗi, có backoff delay giữa các lần retry.
 
-    Có delay (backoff) giữa các lần retry (KHÔNG delay trước lần thử
-    đầu tiên, và KHÔNG delay sau lần thử cuối cùng vì sắp trả kết quả
-    thất bại luôn rồi, delay lúc đó chỉ tốn thời gian vô ích).
+    Nếu `workflow_id` được truyền vào, tự động báo cáo tiến trình
+    real-time qua agents/hooks.py (status "running" khi bắt đầu,
+    "success"/"failed" khi xong) - nếu không có ai đăng ký hook cho
+    workflow_id này thì đây là no-op an toàn (ví dụ khi debug độc lập).
 
-    KHÔNG BAO GIỜ raise exception ra ngoài - đây là node cần đảm bảo
-    Executor có thể chạy song song nhiều worker mà 1 worker lỗi không
-    làm sập cả batch (theo chiến lược "bỏ qua và log lỗi").
+    KHÔNG BAO GIỜ raise exception ra ngoài (chiến lược "bỏ qua và log lỗi").
     """
     completed_outputs = completed_outputs or []
     last_error: Exception | None = None
+
+    if workflow_id is not None:
+        await notify_task_update(workflow_id, task.id, task.title, "running", 50)
 
     for attempt in range(MAX_WORKER_RETRIES + 1):
         try:
             output = await _run_worker_once(task, user_request, supervisor, completed_outputs)
             output.retry_count = attempt
+
+            if workflow_id is not None:
+                await notify_task_update(workflow_id, task.id, output.title, "success", 100)
+
             return output
         except (LLMOutputError, Exception) as e:
             last_error = e
-            print(
-                f"⚠️  [worker:{task.id}] Lần thử {attempt + 1} thất bại: {e}"
-            )
+            print(f"⚠️  [worker:{task.id}] Lần thử {attempt + 1} thất bại: {e}")
 
             is_last_attempt = attempt == MAX_WORKER_RETRIES
             if not is_last_attempt:
@@ -179,6 +168,10 @@ async def run_worker(
                 await asyncio.sleep(WORKER_RETRY_BACKOFF_SECONDS)
 
     print(f"❌ [worker:{task.id}] Thất bại hẳn sau {MAX_WORKER_RETRIES + 1} lần thử.")
+
+    if workflow_id is not None:
+        await notify_task_update(workflow_id, task.id, task.title, "failed", 100, error=str(last_error))
+
     return WorkerOutput(
         task_id=task.id,
         title=task.title,

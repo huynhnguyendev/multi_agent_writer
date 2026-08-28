@@ -57,6 +57,31 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+# ============================================================
+# ALLOWED MSGPACK MODULES - khai báo tường minh các Pydantic schema
+# được phép deserialize từ checkpoint, tránh warning "unregistered
+# type" và tương thích với các phiên bản langgraph-checkpoint tương
+# lai (sẽ chặn hẳn nếu không khai báo).
+# ============================================================
+
+ALLOWED_MSGPACK_MODULES = [
+    ("agents.schemas.user_request", "UserRequest"),
+    ("agents.schemas.guardrail", "GuardrailResult"),
+    ("agents.schemas.supervisor", "SupervisorDecision"),
+    ("agents.schemas.plan", "Plan"),
+    ("agents.schemas.plan", "Task"),
+    ("agents.schemas.hitl", "HITLDecision"),
+    ("agents.schemas.research", "ResearchSource"),
+    ("agents.schemas.research", "ResearchResult"),
+    ("agents.schemas.image", "ImageCandidate"),
+    ("agents.schemas.image", "ImageSpec"),
+    ("agents.schemas.worker", "WorkerOutput"),
+    ("agents.schemas.article", "FinalArticle"),
+    ("agents.schemas.evaluation", "Evaluation"),
+]
+
 from langgraph.graph import END, START, StateGraph
 
 from agents.evaluator import run_evaluator
@@ -203,6 +228,7 @@ async def executor_node(state: WriterState) -> dict:
         plan=state["approved_plan"],
         user_request=state["user_request"],
         supervisor=state["supervisor"],
+        workflow_id=state["workflow_id"],
     )
 
     success_count = sum(1 for o in outputs if o.success)
@@ -354,12 +380,14 @@ async def get_compiled_graph():
     """
     Context manager tạo checkpointer PostgreSQL + compile graph.
 
-    Cách dùng:
-        async with get_compiled_graph() as graph:
-            result = await graph.ainvoke(initial_state, config=...)
+    Dùng JsonPlusSerializer với allowed_json_modules tường minh để
+    tránh warning deserialize + tương thích ngược khi langgraph-
+    checkpoint chặn hẳn kiểu deserialize mặc định ở phiên bản sau.
     """
-    async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
-        await checkpointer.setup()  # Tạo bảng checkpoint nếu chưa có (idempotent)
+    serializer = JsonPlusSerializer(allowed_json_modules=ALLOWED_MSGPACK_MODULES)
+
+    async with AsyncPostgresSaver.from_conn_string(DATABASE_URL, serde=serializer) as checkpointer:
+        await checkpointer.setup()
         graph = build_graph_builder().compile(checkpointer=checkpointer)
         yield graph
 

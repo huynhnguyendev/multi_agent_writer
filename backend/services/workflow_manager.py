@@ -46,6 +46,7 @@ from agents.db.progress_tracker import (
 from agents.graph import build_initial_state, get_compiled_graph
 from agents.hitl_handler import HITL_INTERRUPT_TYPE
 from agents.schemas.user_request import UserRequest
+from agents.hooks import register_task_hook, unregister_task_hook
 
 HITL_TIMEOUT_SECONDS = 60
 
@@ -139,6 +140,11 @@ async def _run_graph(workflow_id: str, resume_input: Any) -> None:
     """
     await update_workflow_run(workflow_id, status="running")
 
+    async def _task_hook(task_id: str, title: str, status: str, progress: int, error: str | None) -> None:
+        await upsert_task(workflow_id, task_id, title, status=status, progress=progress, error_message=error)
+
+    register_task_hook(workflow_id, _task_hook)
+
     try:
         async with get_compiled_graph() as graph:
             config = {"configurable": {"thread_id": workflow_id}}
@@ -148,15 +154,15 @@ async def _run_graph(workflow_id: str, resume_input: Any) -> None:
 
             final_state = await graph.aget_state(config)
 
-            # Nếu graph vừa dừng lại tại 1 interrupt (còn "next" node
-            # chưa chạy), final_state.next sẽ khác rỗng -> đang chờ HITL.
             if final_state.next:
-                return  # đã xử lý trong _handle_stream_chunk (waiting_hitl)
+                return
 
             await _finalize_workflow(workflow_id, final_state.values)
 
     except Exception as e:
         await update_workflow_run(workflow_id, status="failed", error_message=str(e))
+    finally:
+        unregister_task_hook(workflow_id)
 
 
 async def _handle_stream_chunk(workflow_id: str, chunk: dict) -> None:
@@ -222,15 +228,6 @@ async def _sync_node_progress(workflow_id: str, node_name: str, output: dict) ->
 
     elif node_name == "executor":
         await update_workflow_run(workflow_id, current_node=node_name, overall_progress=progress or 0)
-
-        worker_outputs = output.get("worker_outputs", [])
-        for wo in worker_outputs:
-            await upsert_task(
-                workflow_id, wo.task_id, wo.title,
-                status="success" if wo.success else "failed",
-                progress=100,
-                error_message=wo.error,
-            )
 
     elif node_name == "synthesizer":
         final_article = output.get("final_article")

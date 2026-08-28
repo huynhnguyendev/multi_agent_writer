@@ -22,6 +22,7 @@ async def execute_plan(
     plan: Plan,
     user_request: UserRequest,
     supervisor: SupervisorDecision | None = None,
+    workflow_id: str | None = None,
 ) -> list[WorkerOutput]:
     """
     Entry point chính của node Executor.
@@ -40,6 +41,11 @@ async def execute_plan(
     nên hàm này không cần try/except riêng cho từng worker - chỉ cần
     asyncio.gather bình thường (không dùng return_exceptions=True vì
     run_worker() đã đảm bảo không bao giờ raise exception ra ngoài).
+
+    Args:
+        ...
+        workflow_id: Nếu truyền vào, mỗi Worker sẽ tự báo cáo tiến
+            trình real-time qua agents/hooks.py (xem worker.py).
     """
     batches = build_execution_batches(plan.tasks)
 
@@ -56,6 +62,7 @@ async def execute_plan(
                     user_request=user_request,
                     supervisor=supervisor,
                     completed_outputs=all_outputs,
+                    workflow_id=workflow_id,
                 )
                 for task in batch
             ]
@@ -67,16 +74,11 @@ async def execute_plan(
 
         all_outputs.extend(batch_outputs)
 
-    # Sắp xếp lại theo đúng thứ tự "order" trong Plan (thứ tự hiển thị
-    # trong bài viết cuối cùng), KHÔNG theo thứ tự batch/id.
     order_by_task_id = {task.id: task.order for task in plan.tasks}
     all_outputs.sort(key=lambda output: order_by_task_id.get(output.task_id, 0))
 
     success_count = sum(1 for o in all_outputs if o.success)
-    print(
-        f"\n📊 [executor] Hoàn thành: {success_count}/{len(all_outputs)} "
-        f"task thành công."
-    )
+    print(f"\n📊 [executor] Hoàn thành: {success_count}/{len(all_outputs)} task thành công.")
 
     return all_outputs
 

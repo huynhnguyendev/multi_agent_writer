@@ -1,263 +1,229 @@
 """
 Node 4: HITL (Human-in-the-Loop).
 
-Node này KHÔNG gọi LLM - chỉ xử lý logic chờ phản hồi từ user.
+Node này KHÔNG gọi LLM và KHÔNG tự chờ input trực tiếp (khác bản cũ
+dùng input() trên terminal - cách đó không hoạt động được khi chạy
+qua web server, vì không có ai gõ vào terminal của backend cả).
 
-Ở giai đoạn hiện tại (chưa có backend/ với WebSocket), mình mô phỏng
-việc chờ user bằng input() trên terminal, có timeout 60s (theo đúng
-yêu cầu: hết 60s không phản hồi -> tự động approve và chạy tiếp).
+Thay vào đó, dùng cơ chế `interrupt()` built-in của LangGraph:
 
-Khi làm tới backend/ (WebSocket), hàm `wait_for_hitl_decision` này sẽ
-được thay thế bằng phiên bản chờ message từ client qua WebSocket,
-nhưng chữ ký hàm (nhận Plan, trả về HITLDecision + Plan cuối cùng)
-sẽ được giữ nguyên để graph.py không cần sửa gì khi chuyển đổi.
+    1. Node gọi interrupt({"plan": ...}) -> graph DỪNG HẲN LẠI tại đây,
+       payload được trả ra ngoài cho code đang gọi graph.ainvoke().
+    2. backend/services/workflow_manager.py (chạy graph ở background)
+       nhận được payload này, lưu trạng thái "waiting_hitl" vào DB,
+       trả về cho frontend qua GET /workflow/{id}/status.
+    3. Frontend hiển thị Plan cho user xác nhận (approve/edit/reject),
+       gọi POST /workflow/{id}/hitl.
+    4. workflow_manager gọi lại:
+           graph.ainvoke(Command(resume=payload), config=...)
+       LangGraph tự resume đúng tại vị trí đã dừng, và giá trị
+       `payload` đó chính là RETURN VALUE của lời gọi interrupt() ở
+       bước 1 - node tiếp tục chạy tiếp với dữ liệu đó.
 
-3 lựa chọn của user:
-    [A]pprove -> tiếp tục workflow với plan hiện tại
-    [E]dit    -> cho user paste lại JSON plan đã sửa, validate lại
-    [R]eject  -> quay lại Planner, kèm feedback để tạo plan mới
-    (không phản hồi trong 60s -> tự động approve)
+Nhờ cơ chế này, workflow có thể "tạm dừng" hàng giờ/hàng ngày (chờ
+user) mà không tốn tài nguyên compute nào cả (checkpoint Postgres giữ
+toàn bộ state), khác hẳn cách cũ (asyncio.wait_for chặn 1 process
+sống suốt 60s).
+
+3 lựa chọn của user (payload khi resume, dạng dict):
+
+    {"action": "approved", "edited_plan": None, "feedback": None}
+    {"action": "edited",   "edited_plan": {...Plan dict...}, "feedback": None}
+    {"action": "rejected", "edited_plan": None, "feedback": "..."}
+    {"action": "timeout",  "edited_plan": None, "feedback": None}
+        -> do workflow_manager tự gửi khi hết 60s không ai phản hồi
 """
 
-import asyncio
-import json
-import time
+from langgraph.types import interrupt
 
-from pydantic import ValidationError
+from agents.schemas.hitl import HITLDecision
+from agents.schemas.plan import Plan
 
-from agents.schemas import HITLDecision, Plan
-
-HITL_TIMEOUT_SECONDS = 60
-
-
-def _print_plan_summary(plan: Plan) -> None:
-    """In tóm tắt Plan ra terminal để user xem trước khi quyết định."""
-    print("\n" + "=" * 60)
-    print("📋 PLAN CẦN XÁC NHẬN")
-    print("=" * 60)
-    print(f"Title       : {plan.title}")
-    print(f"Objective   : {plan.objective}")
-    print(f"Audience    : {plan.target_audience}")
-    print(f"Tone        : {plan.tone}")
-    print(f"Số tasks    : {len(plan.tasks)}")
-    print("-" * 60)
-
-    for task in plan.tasks:
-        deps = ", ".join(task.depends_on) if task.depends_on else "—"
-        print(f"[{task.id}] {task.title}  (depends_on: {deps})")
-
-    print("=" * 60)
+# Type alias cho payload gửi vào interrupt() / nhận về khi resume,
+# để nơi khác (workflow_manager.py) biết đúng format cần tuân theo.
+HITL_INTERRUPT_TYPE = "hitl_plan_approval"
 
 
-async def _prompt_choice() -> str:
+def request_plan_approval(plan: Plan) -> tuple[HITLDecision, Plan]:
     """
-    Hỏi user chọn A/E/R, lặp lại nếu input không hợp lệ.
-    Chạy input() trong thread riêng (asyncio.to_thread) vì input() là
-    hàm blocking, không thể chạy trực tiếp trong event loop async.
-    """
-    while True:
-        raw = await asyncio.to_thread(
-            input, "\n👉 Chọn hành động - [A]pprove / [E]dit / [R]eject: "
-        )
-        choice = raw.strip().lower()
-        if choice in ("a", "e", "r"):
-            return choice
-        print("⚠️  Lựa chọn không hợp lệ, vui lòng nhập A, E, hoặc R.")
-
-
-async def _edit_plan_flow(plan: Plan) -> Plan:
-    """
-    Cho user paste lại toàn bộ JSON của Plan để chỉnh sửa thủ công.
-
-    Flow:
-        1. In ra JSON hiện tại của plan.
-        2. User paste JSON mới (kết thúc bằng dòng chỉ chứa "END").
-           Nếu để trống (chỉ gõ "END" ngay) -> giữ nguyên plan cũ.
-        3. Validate lại bằng Plan schema (bao gồm cả cycle detection).
-           Nếu lỗi -> báo lỗi, cho user thử lại hoặc hủy edit (giữ plan cũ).
-    """
-    print("\n" + "-" * 60)
-    print("✏️  CHỈNH SỬA PLAN")
-    print("-" * 60)
-    print("Plan hiện tại (JSON):\n")
-    print(plan.model_dump_json(indent=2))
-    print("-" * 60)
-    print(
-        "Paste JSON plan đã chỉnh sửa bên dưới, kết thúc bằng dòng "
-        "chỉ chứa 'END'.\n(Để trống rồi gõ 'END' ngay = giữ nguyên plan cũ)\n"
-    )
-
-    while True:
-        lines: list[str] = []
-        while True:
-            line = await asyncio.to_thread(input)
-            if line.strip() == "END":
-                break
-            lines.append(line)
-
-        raw_json = "\n".join(lines).strip()
-
-        if not raw_json:
-            print("↩️  Không có thay đổi, giữ nguyên plan cũ.")
-            return plan
-
-        try:
-            data = json.loads(raw_json)
-            edited_plan = Plan(**data)
-            print("✅ Plan mới hợp lệ!")
-            return edited_plan
-        except (json.JSONDecodeError, ValidationError) as e:
-            print(f"❌ Plan không hợp lệ: {e}")
-            retry = await asyncio.to_thread(
-                input, "Thử paste lại? (y = thử lại / n = hủy, giữ plan cũ): "
-            )
-            if retry.strip().lower() != "y":
-                print("↩️  Hủy chỉnh sửa, giữ nguyên plan cũ.")
-                return plan
-            print("\nPaste lại JSON, kết thúc bằng dòng 'END':\n")
-
-
-async def wait_for_hitl_decision(
-    plan: Plan,
-    timeout_seconds: int = HITL_TIMEOUT_SECONDS,
-) -> tuple[HITLDecision, Plan]:
-    """
-    Entry point chính của node HITL.
+    Dừng graph tại đây, đợi resume với quyết định của user.
 
     Returns:
-        (HITLDecision, Plan) - Plan trả về là bản cuối cùng sẽ dùng
+        (HITLDecision, Plan) - Plan trả về là bản CUỐI CÙNG sẽ dùng
         cho các bước tiếp theo:
             - approved/timeout: giữ nguyên plan gốc
-            - edited: plan đã được user sửa
+            - edited: plan đã được user sửa (parse lại từ edited_plan dict)
             - rejected: vẫn trả về plan gốc (không dùng), vì graph sẽ
-              gọi lại Planner với feedback để tạo plan HOÀN TOÀN MỚI
+              quay lại Planner với feedback để tạo plan HOÀN TOÀN MỚI
+
+    Raises:
+        ValidationError (từ Pydantic): nếu edited_plan gửi lên không
+        hợp lệ (ví dụ vượt quá 7 task, cycle dependency...) - lỗi này
+        được validate NGAY tại code (không tin tưởng payload từ FE),
+        nên caller (graph.py) cần chuẩn bị xử lý nếu cần.
     """
-    _print_plan_summary(plan)
-    print(f"\n⏳ Bạn có {timeout_seconds}s để phản hồi (hết giờ = tự động approve)...")
-
-    start = time.monotonic()
-
-    try:
-        choice = await asyncio.wait_for(_prompt_choice(), timeout=timeout_seconds)
-    except asyncio.TimeoutError:
-        print("\n⏰ Hết thời gian chờ - tự động APPROVE và tiếp tục workflow.")
-        return (
-            HITLDecision(
-                action="timeout",
-                approved=True,
-                edited=False,
-                feedback=None,
-                response_time_seconds=None,
-            ),
-            plan,
-        )
-
-    elapsed = round(time.monotonic() - start, 2)
-
-    if choice == "a":
-        print("✅ Đã APPROVE plan.")
-        decision = HITLDecision(
-            action="approved",
-            approved=True,
-            edited=False,
-            response_time_seconds=elapsed,
-        )
-        return decision, plan
-
-    if choice == "e":
-        edited_plan = await _edit_plan_flow(plan)
-        was_edited = edited_plan.model_dump() != plan.model_dump()
-        print("✅ Đã xác nhận plan (có chỉnh sửa)." if was_edited else "✅ Đã APPROVE plan (không đổi gì).")
-        decision = HITLDecision(
-            action="edited" if was_edited else "approved",
-            approved=True,
-            edited=was_edited,
-            response_time_seconds=elapsed,
-        )
-        return decision, edited_plan
-
-    # choice == "r"
-    feedback = await asyncio.to_thread(
-        input, "📝 Nhập feedback để Planner cải thiện plan: "
+    payload: dict = interrupt(
+        {
+            "type": HITL_INTERRUPT_TYPE,
+            "plan": plan.model_dump(),
+        }
     )
-    print("🔁 Đã REJECT plan, sẽ quay lại Planner với feedback trên.")
+
+    action = payload.get("action", "approved")
+    edited_plan_data = payload.get("edited_plan")
+    feedback = payload.get("feedback")
+
+    approved = action in ("approved", "edited", "timeout")
+    edited = action == "edited" and edited_plan_data is not None
+
     decision = HITLDecision(
-        action="rejected",
-        approved=False,
-        edited=False,
-        feedback=feedback.strip() or None,
-        response_time_seconds=elapsed,
+        action=action,
+        approved=approved,
+        edited=edited,
+        feedback=feedback,
     )
-    return decision, plan
+
+    final_plan = Plan(**edited_plan_data) if edited else plan
+
+    return decision, final_plan
 
 
 # ============================================================
-# DEBUG - Chạy trực tiếp file này để test HITL
+# DEBUG - Test cơ chế interrupt/resume ĐỘC LẬP (không chạy full
+# pipeline Guardrail->...->Executor, chỉ dựng 1 graph nhỏ 2 node để
+# kiểm tra riêng cơ chế dừng/resume có hoạt động đúng không).
 # ============================================================
 #
 # Cách chạy (đứng ở thư mục root của project multi_agent_writer/):
 #   python -m agents.hitl_handler
-#
-# Gợi ý test:
-#   - Thử chọn "a" -> xem action="approved"
-#   - Thử chọn "r" -> nhập feedback -> xem action="rejected"
-#   - Thử chọn "e" -> để trống rồi "END" -> xem giữ nguyên plan
-#   - Thử chọn "e" -> paste JSON đã sửa 1 field -> xem action="edited"
-#   - Không gõ gì, đợi hết 60s (hoặc sửa timeout_seconds=10 để test nhanh)
 # ============================================================
 
 # if __name__ == "__main__":
+#     import sys
+
+#     if sys.platform == "win32":
+#         import asyncio
+#         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+#     import asyncio
+#     from typing import TypedDict
+
+#     from langgraph.checkpoint.memory import InMemorySaver
+#     from langgraph.graph import END, START, StateGraph
+#     from langgraph.types import Command
+
 #     from agents.schemas.plan import Task
 
+#     class _DebugState(TypedDict):
+#         plan: Plan
+#         hitl_decision: HITLDecision | None
+#         final_plan: Plan | None
+
+#     def _hitl_test_node(state: _DebugState) -> dict:
+#         decision, final_plan = request_plan_approval(state["plan"])
+#         return {"hitl_decision": decision, "final_plan": final_plan}
+
 #     async def _debug():
+#         print("=" * 60)
+#         print("DEBUG: Test cơ chế interrupt/resume của HITL")
+#         print("=" * 60)
+
 #         sample_plan = Plan(
 #             title="MCP cho AI Engineer",
-#             objective="Giải thích MCP và ứng dụng thực tế",
+#             objective="Test interrupt/resume",
 #             target_audience="AI Engineer",
 #             tone="technical",
-#             estimated_sections=3,
+#             estimated_sections=1,
 #             tasks=[
 #                 Task(
 #                     id="task_01",
-#                     title="Giới thiệu MCP",
-#                     description="Giải thích MCP là gì",
-#                     objective="Người đọc hiểu khái niệm cơ bản",
-#                     expected_output="~300 từ",
+#                     title="Giới thiệu",
+#                     description="Giới thiệu tổng quan về MCP.",
+#                     objective="Giải thích MCP là gì.",
+#                     expected_output="Phần giới thiệu MCP.",
+#                     depends_on=[],
+#                     order=0,
 #                 ),
 #                 Task(
 #                     id="task_02",
-#                     title="Kiến trúc MCP",
-#                     description="Giải thích client/server/host",
-#                     objective="Người đọc hiểu kiến trúc",
-#                     expected_output="~400 từ",
+#                     title="Analyze MCP",
+#                     description="Phân tích kiến trúc và cách MCP hoạt động.",
+#                     objective="Giúp người đọc hiểu cơ chế hoạt động của MCP.",
+#                     expected_output="Phần phân tích kiến trúc MCP.",
 #                     depends_on=["task_01"],
+#                     order=1,
 #                 ),
 #                 Task(
 #                     id="task_03",
-#                     title="Kết luận",
-#                     description="Tổng kết bài viết",
-#                     objective="Chốt lại ý chính",
-#                     expected_output="~150 từ",
+#                     title="Write article",
+#                     description="Tổng hợp nội dung thành bài viết hoàn chỉnh.",
+#                     objective="Tạo nội dung có cấu trúc về MCP cho AI Engineer.",
+#                     expected_output="Phần kết luận và nội dung bài viết.",
 #                     depends_on=["task_02"],
+#                     order=2,
 #                 ),
 #             ],
 #         )
 
-#         print("=" * 60)
-#         print("DEBUG: Test HITL Handler")
-#         print("=" * 60)
-#         print("💡 Tip: sửa timeout_seconds=10 trong code nếu muốn test nhanh case timeout.")
+#         builder = StateGraph(_DebugState)
+#         builder.add_node("hitl", _hitl_test_node)
+#         builder.add_edge(START, "hitl")
+#         builder.add_edge("hitl", END)
 
-#         decision, final_plan = await wait_for_hitl_decision(sample_plan, timeout_seconds=60)
+#         checkpointer = InMemorySaver()
+#         graph = builder.compile(checkpointer=checkpointer)
 
-#         print("\n" + "=" * 60)
-#         print("KẾT QUẢ HITL")
-#         print("=" * 60)
-#         print(f"Action              : {decision.action}")
-#         print(f"Approved            : {decision.approved}")
-#         print(f"Edited              : {decision.edited}")
-#         print(f"Feedback            : {decision.feedback}")
-#         print(f"Response time (s)   : {decision.response_time_seconds}")
-#         print(f"\nPlan title cuối cùng: {final_plan.title}")
+#         config = {"configurable": {"thread_id": "debug-hitl-thread-001"}}
+
+#         # --- Bước 1: chạy graph lần đầu -> phải DỪNG LẠI ở interrupt ---
+#         print("\n### Bước 1: Chạy graph lần đầu (kỳ vọng dừng tại interrupt) ###")
+#         result = await graph.ainvoke({"plan": sample_plan, "hitl_decision": None, "final_plan": None}, config=config)
+
+#         assert "__interrupt__" in result, "❌ Graph phải dừng tại interrupt, nhưng chạy thẳng tới cuối!"
+#         interrupt_payload = result["__interrupt__"][0].value
+#         print(f"✅ Graph đã dừng đúng tại interrupt.")
+#         print(f"   Payload nhận được: type={interrupt_payload['type']}, plan_title={interrupt_payload['plan']['title']}")
+
+#         # --- Bước 2: giả lập user APPROVE -> resume ---
+#         print("\n### Bước 2: Resume với action='approved' ###")
+#         result = await graph.ainvoke(
+#             Command(resume={"action": "approved", "edited_plan": None, "feedback": None}),
+#             config=config,
+#         )
+#         assert "__interrupt__" not in result, "❌ Graph không được dừng lại nữa sau khi resume!"
+#         assert result["hitl_decision"].approved is True
+#         assert result["hitl_decision"].action == "approved"
+#         print(f"✅ Resume thành công: hitl_decision={result['hitl_decision']}")
+
+#         # --- Bước 3: chạy lại từ đầu với thread_id KHÁC, test case EDIT ---
+#         print("\n### Bước 3: Test case EDIT (dùng thread_id mới) ###")
+#         config_2 = {"configurable": {"thread_id": "debug-hitl-thread-002"}}
+#         await graph.ainvoke({"plan": sample_plan, "hitl_decision": None, "final_plan": None}, config=config_2)
+
+#         edited_plan_dict = sample_plan.model_dump()
+#         edited_plan_dict["title"] = "MCP cho AI Engineer (đã chỉnh sửa)"
+
+#         result = await graph.ainvoke(
+#             Command(resume={"action": "edited", "edited_plan": edited_plan_dict, "feedback": None}),
+#             config=config_2,
+#         )
+#         assert result["hitl_decision"].edited is True
+#         assert result["final_plan"].title == "MCP cho AI Engineer (đã chỉnh sửa)"
+#         print(f"✅ Edit thành công: final_plan.title = '{result['final_plan'].title}'")
+
+#         # --- Bước 4: test case REJECT ---
+#         print("\n### Bước 4: Test case REJECT (dùng thread_id mới) ###")
+#         config_3 = {"configurable": {"thread_id": "debug-hitl-thread-003"}}
+#         await graph.ainvoke({"plan": sample_plan, "hitl_decision": None, "final_plan": None}, config=config_3)
+
+#         result = await graph.ainvoke(
+#             Command(resume={"action": "rejected", "edited_plan": None, "feedback": "Thêm phần bảo mật"}),
+#             config=config_3,
+#         )
+#         assert result["hitl_decision"].approved is False
+#         assert result["hitl_decision"].feedback == "Thêm phần bảo mật"
+#         print(f"✅ Reject thành công: feedback='{result['hitl_decision'].feedback}'")
+
+#         print("\n✅ Tất cả test pass! Cơ chế interrupt/resume hoạt động đúng.")
 
 #     asyncio.run(_debug())

@@ -61,7 +61,7 @@ from langgraph.graph import END, START, StateGraph
 
 from agents.evaluator import run_evaluator
 from agents.executor import execute_plan, resolve_images
-from agents.hitl_handler import wait_for_hitl_decision
+from agents.hitl_handler import request_plan_approval
 from agents.input_guardrails import check_input
 from agents.logger import get_workflow_logger, log_node_end, log_node_error, log_node_start
 from agents.planner import run_planner
@@ -143,13 +143,25 @@ def route_after_planner(state: WriterState) -> str:
     return "hitl" if state["plan"] is not None else "failed"
 
 
-async def hitl_node(state: WriterState) -> dict:
-    logger = get_workflow_logger(state["workflow_id"])
+def hitl_node(state: WriterState) -> dict:
+    """
+    Node này giờ là SYNC (không async def), vì gọi interrupt() bên
+    trong - LangGraph sẽ tự dừng graph ngay tại lời gọi này, trả
+    quyền điều khiển ra ngoài cho code đang gọi graph.ainvoke().
 
+    Logic đếm 60s timeout KHÔNG còn nằm ở đây nữa (khác bản cũ dùng
+    asyncio.wait_for chặn trực tiếp) - giờ do
+    backend/services/workflow_manager.py đảm nhiệm: nó gọi graph,
+    nhận về __interrupt__, tự đếm 60s bằng background task, nếu hết
+    giờ mà chưa có ai gọi API /hitl thì tự gửi
+    Command(resume={"action": "timeout", ...}) để graph tiếp tục.
+    """
+    logger = get_workflow_logger(state["workflow_id"])
     log_node_start(logger, "hitl")
 
     # Nếu đã hết lượt revise plan, ép approve luôn plan hiện tại,
-    # không hỏi user nữa (tránh loop reject vô hạn).
+    # KHÔNG gọi interrupt() nữa (tránh loop reject vô hạn) - graph đi
+    # thẳng qua executor mà không cần dừng chờ user lần nữa.
     if state["plan_revision_count"] >= MAX_PLAN_REVISIONS:
         msg = f"Đã đạt giới hạn {MAX_PLAN_REVISIONS} lần tạo lại plan. Tự động chấp nhận plan hiện tại."
         logger.warning("[hitl] %s", msg)
@@ -165,7 +177,7 @@ async def hitl_node(state: WriterState) -> dict:
         log_node_end(logger, "hitl", action=decision.action, approved=decision.approved, forced=True)
         return {"hitl": decision, "approved_plan": state["plan"]}
 
-    decision, final_plan = await wait_for_hitl_decision(state["plan"])
+    decision, final_plan = request_plan_approval(state["plan"])
 
     log_node_end(logger, "hitl", action=decision.action, approved=decision.approved, edited=decision.edited)
 
@@ -402,37 +414,37 @@ async def run_workflow(user_request: UserRequest, workflow_id: str | None = None
 # lại ở bước HITL chờ bạn gõ A/E/R trên terminal.
 # ============================================================
 
-if __name__ == "__main__":
-    async def _debug():
-        print("=" * 60)
-        print("DEBUG: Full Workflow End-to-End")
-        print("=" * 60)
+# if __name__ == "__main__":
+#     async def _debug():
+#         print("=" * 60)
+#         print("DEBUG: Full Workflow End-to-End")
+#         print("=" * 60)
 
-        user_request = UserRequest(
-            topic="MCP (Model Context Protocol) cho AI Engineer",
-            article_type="blog",
-            target_audience="AI Engineer",
-            tone="technical",
-            language="vi",
-            raw_input="Viết một bài blog bằng tiếng Việt về MCP cho AI Engineer.",
-        )
+#         user_request = UserRequest(
+#             topic="MCP (Model Context Protocol) cho AI Engineer",
+#             article_type="blog",
+#             target_audience="AI Engineer",
+#             tone="technical",
+#             language="vi",
+#             raw_input="Viết một bài blog bằng tiếng Việt về MCP cho AI Engineer.",
+#         )
 
-        final_state = await run_workflow(user_request)
+#         final_state = await run_workflow(user_request)
 
-        print("\n" + "=" * 60)
-        print("KẾT QUẢ CUỐI CÙNG CỦA WORKFLOW")
-        print("=" * 60)
-        print(f"Workflow ID     : {final_state['workflow_id']}")
-        print(f"Guardrail valid : {final_state['guardrail'].is_valid if final_state['guardrail'] else None}")
-        print(f"Plan revisions  : {final_state['plan_revision_count']}")
-        print(f"Article revisions: {final_state['revision_count']}")
-        print(f"Errors          : {final_state['errors']}")
+#         print("\n" + "=" * 60)
+#         print("KẾT QUẢ CUỐI CÙNG CỦA WORKFLOW")
+#         print("=" * 60)
+#         print(f"Workflow ID     : {final_state['workflow_id']}")
+#         print(f"Guardrail valid : {final_state['guardrail'].is_valid if final_state['guardrail'] else None}")
+#         print(f"Plan revisions  : {final_state['plan_revision_count']}")
+#         print(f"Article revisions: {final_state['revision_count']}")
+#         print(f"Errors          : {final_state['errors']}")
 
-        if final_state.get("output_markdown"):
-            print(f"\n✅ Bài viết cuối cùng đã lưu thành công.")
-            print(f"Overall score: {final_state['evaluation'].overall_score}")
-            print(f"📄 Xem log chi tiết tại: logs/workflow_{final_state['workflow_id']}_*.log")
-        else:
-            print("\n❌ Workflow không hoàn thành (bị block hoặc lỗi giữa chừng).")
+#         if final_state.get("output_markdown"):
+#             print(f"\n✅ Bài viết cuối cùng đã lưu thành công.")
+#             print(f"Overall score: {final_state['evaluation'].overall_score}")
+#             print(f"📄 Xem log chi tiết tại: logs/workflow_{final_state['workflow_id']}_*.log")
+#         else:
+#             print("\n❌ Workflow không hoàn thành (bị block hoặc lỗi giữa chừng).")
 
-    asyncio.run(_debug())
+#     asyncio.run(_debug())

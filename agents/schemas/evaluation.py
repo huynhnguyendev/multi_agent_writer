@@ -8,19 +8,21 @@ nhiều tiêu chí:
     Completeness            (Mức độ đầy đủ)
     Coherence               (Tính logic/mạch lạc)
     Writing Quality         (Chất lượng văn phong)
+    Visual Support          (Chất lượng ảnh)
     Instruction Following   (Tuân thủ yêu cầu ban đầu)
 
 Sau đó mới tính ra overall_score.
 
 Ví dụ:
-    factuality             = 9.2
-    completeness           = 8.7
+    factuality              = 9.2
+    completeness            = 8.7
     coherence               = 9.4
     writing_quality         = 9.1
+    Visual Support          = 8.1
     instruction_following   = 9.5
 
     overall_score           = 9.2
-    accepted                 = True
+    accepted                = True
 
 Quy tắc chấp nhận:
 

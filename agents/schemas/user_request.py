@@ -20,7 +20,6 @@ Một số field có thể được Planner suy luận sau.
 
 from pydantic import BaseModel, Field
 
-
 class UserRequest(BaseModel):
     """Dữ liệu request ban đầu từ người dùng."""
 

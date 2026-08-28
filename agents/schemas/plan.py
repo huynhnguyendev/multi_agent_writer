@@ -21,7 +21,6 @@ Task Dependency (DAG):
 
 from pydantic import BaseModel, Field, field_validator
 
-
 class Task(BaseModel):
     """Một task cụ thể trong Plan, sẽ được giao cho 1 Worker xử lý."""
 

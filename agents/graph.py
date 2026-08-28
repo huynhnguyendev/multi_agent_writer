@@ -23,6 +23,9 @@ Sơ đồ luồng:
     executor (fan-out workers theo batch, xem agents/executor/)
       │
       ▼
+    image_resolver (resolve ảnh Wikimedia từ image_queries, 1 lần duy nhất)
+      │
+      ▼
     synthesizer <──────────────────┐
       │ (thất bại LLM)             │ (rejected, còn lượt revise)
       ├──(fail)──> END             │
@@ -34,6 +37,9 @@ Sơ đồ luồng:
       │
       ▼
      END
+
+Logging: mỗi node đi qua đều được log qua agents/logger.py, ghi ra cả
+console lẫn file riêng logs/workflow_{workflow_id}_{timestamp}.log.
 """
 
 import os
@@ -57,6 +63,7 @@ from agents.evaluator import run_evaluator
 from agents.executor import execute_plan, resolve_images
 from agents.hitl_handler import wait_for_hitl_decision
 from agents.input_guardrails import check_input
+from agents.logger import get_workflow_logger, log_node_end, log_node_error, log_node_start
 from agents.planner import run_planner
 from agents.schemas.evaluation import MAX_REVISIONS
 from agents.schemas.state import WriterState
@@ -85,12 +92,16 @@ MAX_PLAN_REVISIONS = 3
 
 
 async def guardrail_node(state: WriterState) -> dict:
+    logger = get_workflow_logger(state["workflow_id"])
     user_request = state["user_request"]
     raw_input = user_request.raw_input or user_request.topic
 
-    print(f"\n{'=' * 60}\n[NODE] Input Guardrails\n{'=' * 60}")
+    log_node_start(logger, "guardrail")
     result = await check_input(raw_input)
-    print(f"is_valid={result.is_valid} category={result.category} reason={result.reason}")
+    log_node_end(
+        logger, "guardrail",
+        is_valid=result.is_valid, category=result.category, reason=result.reason,
+    )
 
     return {"guardrail": result}
 
@@ -102,15 +113,19 @@ def route_after_guardrail(state: WriterState) -> str:
 
 
 async def supervisor_node(state: WriterState) -> dict:
-    print(f"\n{'=' * 60}\n[NODE] Supervisor\n{'=' * 60}")
+    logger = get_workflow_logger(state["workflow_id"])
+
+    log_node_start(logger, "supervisor")
     decision = await run_supervisor(state["user_request"])
-    print(f"mode={decision.mode} reasoning={decision.reasoning}")
+    log_node_end(logger, "supervisor", mode=decision.mode, reasoning=decision.reasoning)
 
     return {"supervisor": decision}
 
 
 async def planner_node(state: WriterState) -> dict:
-    print(f"\n{'=' * 60}\n[NODE] Planner (plan_revision_count={state['plan_revision_count']})\n{'=' * 60}")
+    logger = get_workflow_logger(state["workflow_id"])
+
+    log_node_start(logger, "planner", plan_revision_count=state["plan_revision_count"])
 
     feedback = None
     if state.get("hitl") is not None and not state["hitl"].approved:
@@ -118,11 +133,11 @@ async def planner_node(state: WriterState) -> dict:
 
     try:
         plan = await run_planner(state["user_request"], state["supervisor"], feedback=feedback)
-        print(f"Plan tạo thành công: '{plan.title}' ({len(plan.tasks)} tasks)")
+        log_node_end(logger, "planner", title=plan.title, tasks=len(plan.tasks))
         return {"plan": plan}
     except LLMOutputError as e:
         error_msg = f"[planner] Thất bại sau khi retry: {e}"
-        print(f"❌ {error_msg}")
+        log_node_error(logger, "planner", error_msg)
         return {"plan": None, "errors": [error_msg]}
 
 
@@ -131,15 +146,16 @@ def route_after_planner(state: WriterState) -> str:
 
 
 async def hitl_node(state: WriterState) -> dict:
-    print(f"\n{'=' * 60}\n[NODE] HITL\n{'=' * 60}")
+    logger = get_workflow_logger(state["workflow_id"])
+
+    log_node_start(logger, "hitl")
 
     # Nếu đã hết lượt revise plan, ép approve luôn plan hiện tại,
     # không hỏi user nữa (tránh loop reject vô hạn).
     if state["plan_revision_count"] >= MAX_PLAN_REVISIONS:
-        print(
-            f"⚠️  Đã đạt giới hạn {MAX_PLAN_REVISIONS} lần tạo lại plan. "
-            "Tự động chấp nhận plan hiện tại."
-        )
+        msg = f"Đã đạt giới hạn {MAX_PLAN_REVISIONS} lần tạo lại plan. Tự động chấp nhận plan hiện tại."
+        logger.warning("[hitl] %s", msg)
+
         from agents.schemas.hitl import HITLDecision
 
         decision = HITLDecision(
@@ -148,9 +164,12 @@ async def hitl_node(state: WriterState) -> dict:
             edited=False,
             feedback=None,
         )
+        log_node_end(logger, "hitl", action=decision.action, approved=decision.approved, forced=True)
         return {"hitl": decision, "approved_plan": state["plan"]}
 
     decision, final_plan = await wait_for_hitl_decision(state["plan"])
+
+    log_node_end(logger, "hitl", action=decision.action, approved=decision.approved, edited=decision.edited)
 
     update: dict = {"hitl": decision}
     if decision.approved:
@@ -166,7 +185,9 @@ def route_after_hitl(state: WriterState) -> str:
 
 
 async def executor_node(state: WriterState) -> dict:
-    print(f"\n{'=' * 60}\n[NODE] Executor\n{'=' * 60}")
+    logger = get_workflow_logger(state["workflow_id"])
+
+    log_node_start(logger, "executor", tasks=len(state["approved_plan"].tasks))
 
     outputs = await execute_plan(
         plan=state["approved_plan"],
@@ -174,19 +195,28 @@ async def executor_node(state: WriterState) -> dict:
         supervisor=state["supervisor"],
     )
 
+    success_count = sum(1 for o in outputs if o.success)
+    log_node_end(logger, "executor", success=success_count, total=len(outputs))
+
     return {"worker_outputs": outputs}
 
 
 async def image_resolver_node(state: WriterState) -> dict:
-    print(f"\n{'=' * 60}\n[NODE] Image Resolver\n{'=' * 60}")
+    logger = get_workflow_logger(state["workflow_id"])
+
+    log_node_start(logger, "image_resolver")
 
     specs = await resolve_images(state["worker_outputs"])
+
+    log_node_end(logger, "image_resolver", resolved=len(specs))
 
     return {"image_specs": specs}
 
 
 async def synthesizer_node(state: WriterState) -> dict:
-    print(f"\n{'=' * 60}\n[NODE] Synthesizer (revision_count={state['revision_count']})\n{'=' * 60}")
+    logger = get_workflow_logger(state["workflow_id"])
+
+    log_node_start(logger, "synthesizer", revision_count=state["revision_count"])
 
     is_revision = state.get("evaluation") is not None and not state["evaluation"].accepted
     revision_feedback = state["evaluation"].feedback if is_revision else None
@@ -201,11 +231,14 @@ async def synthesizer_node(state: WriterState) -> dict:
             revision_feedback=revision_feedback,
             previous_article=previous_article,
         )
-        print(f"Synthesizer thành công: '{article.title}' (v{article.version}, {article.word_count} từ)")
+        log_node_end(
+            logger, "synthesizer",
+            title=article.title, version=article.version, word_count=article.word_count,
+        )
         return {"final_article": article}
     except LLMOutputError as e:
         error_msg = f"[synthesizer] Thất bại sau khi retry: {e}"
-        print(f"❌ {error_msg}")
+        log_node_error(logger, "synthesizer", error_msg)
         return {"final_article": None, "errors": [error_msg]}
 
 
@@ -214,14 +247,20 @@ def route_after_synthesizer(state: WriterState) -> str:
 
 
 async def evaluator_node(state: WriterState) -> dict:
-    print(f"\n{'=' * 60}\n[NODE] Evaluator\n{'=' * 60}")
+    logger = get_workflow_logger(state["workflow_id"])
+
+    log_node_start(logger, "evaluator")
 
     evaluation = await run_evaluator(
         final_article=state["final_article"],
         user_request=state["user_request"],
         plan=state["approved_plan"],
     )
-    print(f"overall_score={evaluation.overall_score} accepted={evaluation.accepted}")
+
+    log_node_end(
+        logger, "evaluator",
+        overall_score=evaluation.overall_score, accepted=evaluation.accepted,
+    )
 
     update: dict = {"evaluation": evaluation}
     if not evaluation.accepted:
@@ -235,9 +274,10 @@ def route_after_evaluator(state: WriterState) -> str:
         return "save_output"
 
     if state["revision_count"] >= MAX_REVISIONS:
-        print(
-            f"⚠️  Đã đạt giới hạn {MAX_REVISIONS} lần revision. "
-            "Chấp nhận bài viết với điểm hiện tại (theo yêu cầu)."
+        logger = get_workflow_logger(state["workflow_id"])
+        logger.warning(
+            "[evaluator] Đã đạt giới hạn %d lần revision. Chấp nhận bài viết với điểm hiện tại.",
+            MAX_REVISIONS,
         )
         return "save_output"
 
@@ -245,10 +285,14 @@ def route_after_evaluator(state: WriterState) -> str:
 
 
 async def save_output_node(state: WriterState) -> dict:
-    print(f"\n{'=' * 60}\n[NODE] Save Output\n{'=' * 60}")
+    logger = get_workflow_logger(state["workflow_id"])
+
+    log_node_start(logger, "save_output")
 
     filepath = save_article_to_markdown(state["final_article"], workflow_id=state["workflow_id"])
-    print(f"Đã lưu tại: {filepath}")
+
+    log_node_end(logger, "save_output", filepath=str(filepath))
+    logger.info("=== Kết thúc workflow %s ===", state["workflow_id"])
 
     return {"output_markdown": state["final_article"].markdown}
 
@@ -389,6 +433,7 @@ if __name__ == "__main__":
         if final_state.get("output_markdown"):
             print(f"\n✅ Bài viết cuối cùng đã lưu thành công.")
             print(f"Overall score: {final_state['evaluation'].overall_score}")
+            print(f"📄 Xem log chi tiết tại: logs/workflow_{final_state['workflow_id']}_*.log")
         else:
             print("\n❌ Workflow không hoàn thành (bị block hoặc lỗi giữa chừng).")
 

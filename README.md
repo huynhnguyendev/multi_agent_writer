@@ -850,3 +850,5 @@ Xem file [`LICENSE`](LICENSE) để biết thông tin giấy phép hiện tại.
 ---
 
 **Cập nhật lần cuối:** 29/08/2026
+
+**Author:** _Huynh Nguyen Dev_

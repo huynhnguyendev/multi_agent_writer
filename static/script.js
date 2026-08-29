@@ -43,6 +43,7 @@ const state = {
   cachedPlan: null,
   articleMarkdown: null,
   editTaskCounter: 0,
+  planUiMode: "view", // "view" | "edit" | "reject"
 };
 
 // ============================================================
@@ -332,9 +333,17 @@ function showPlanPanel(data, opts = {}) {
 
   el.planActions.classList.toggle("is-hidden", !isWaiting);
   el.planHint.classList.toggle("is-hidden", !isWaiting);
-  el.planEditForm.classList.add("is-hidden");
-  el.planRejectForm.classList.add("is-hidden");
-  el.planView.classList.remove("is-hidden");
+
+  // CHỈ ép về sub-view "view" khi user thực sự đang ở chế độ đó.
+  // Nếu đang mở form Edit/Reject (planUiMode !== "view"), TUYỆT ĐỐI
+  // không đụng vào - tránh bug mất nội dung đang gõ dở mỗi lần poll
+  // 3s (waiting_hitl có thể kéo dài tới 60s, gần như chắc chắn dính
+  // ít nhất 1 lần poll giữa chừng nếu không có fix này).
+  if (state.planUiMode === "view") {
+    el.planEditForm.classList.add("is-hidden");
+    el.planRejectForm.classList.add("is-hidden");
+    el.planView.classList.remove("is-hidden");
+  }
 }
 
 el.planApproveBtn.addEventListener("click", async () => {
@@ -346,13 +355,17 @@ el.planApproveBtn.addEventListener("click", async () => {
 });
 
 el.planRejectBtn.addEventListener("click", () => {
+  state.planUiMode = "reject";
   el.planView.classList.add("is-hidden");
   el.planRejectForm.classList.remove("is-hidden");
+  pauseHitlTimeout();
 });
 
 el.cancelRejectBtn.addEventListener("click", () => {
+  state.planUiMode = "view";
   el.planRejectForm.classList.add("is-hidden");
   el.planView.classList.remove("is-hidden");
+  resumeHitlTimeout();
 });
 
 el.confirmRejectBtn.addEventListener("click", async () => {
@@ -370,6 +383,9 @@ el.planEditBtn.addEventListener("click", () => {
   const plan = state.cachedPlan;
   if (!plan) return;
 
+  state.planUiMode = "edit";
+  pauseHitlTimeout();
+
   el.eTitle.value = plan.title;
   el.eObjective.value = plan.objective;
   el.eAudience.value = plan.target_audience;
@@ -380,6 +396,13 @@ el.planEditBtn.addEventListener("click", () => {
 
   el.planView.classList.add("is-hidden");
   el.planEditForm.classList.remove("is-hidden");
+});
+
+el.cancelEditBtn.addEventListener("click", () => {
+  state.planUiMode = "view";
+  el.planEditForm.classList.add("is-hidden");
+  el.planView.classList.remove("is-hidden");
+  resumeHitlTimeout();
 });
 
 el.cancelEditBtn.addEventListener("click", () => {
@@ -400,6 +423,12 @@ function addEditTaskCard(taskData) {
   card.dataset.taskId = id;
   card.dataset.dependsOn = JSON.stringify(taskData?.depends_on || []);
   card.dataset.order = taskData?.order ?? count;
+  // Giữ nguyên research_queries gốc (nếu có) - chỉ dùng lại khi user
+  // KHÔNG đổi trạng thái checkbox, tránh mất query cụ thể mà Planner
+  // đã tạo ra ban đầu.
+  card.dataset.researchQueries = JSON.stringify(
+    taskData?.research_queries || [],
+  );
 
   card.querySelector(".edit-task-card__label").textContent = id;
   card.querySelector(".et-title").value = taskData?.title || "";
@@ -407,6 +436,8 @@ function addEditTaskCard(taskData) {
   card.querySelector(".et-objective").value = taskData?.objective || "";
   card.querySelector(".et-expected-output").value =
     taskData?.expected_output || "";
+  card.querySelector(".et-requires-research").checked =
+    taskData?.requires_research || false;
 
   card
     .querySelector(".edit-task-card__remove")
@@ -440,17 +471,37 @@ el.saveEditBtn.addEventListener("click", async () => {
     return;
   }
 
-  const tasks = cards.map((card, i) => ({
-    id: card.dataset.taskId,
-    title: card.querySelector(".et-title").value.trim(),
-    description: card.querySelector(".et-description").value.trim(),
-    objective: card.querySelector(".et-objective").value.trim(),
-    expected_output: card.querySelector(".et-expected-output").value.trim(),
-    requires_research: false,
-    research_queries: [],
-    depends_on: JSON.parse(card.dataset.dependsOn || "[]"),
-    order: i,
-  }));
+  const tasks = cards.map((card, i) => {
+    const title = card.querySelector(".et-title").value.trim();
+    const requiresResearch = card.querySelector(
+      ".et-requires-research",
+    ).checked;
+    let researchQueries = JSON.parse(card.dataset.researchQueries || "[]");
+
+    // Nếu user bật research nhưng chưa có query cụ thể nào (task mới
+    // thêm, hoặc task gốc vốn không cần research) -> tự dùng title
+    // làm query mặc định, đảm bảo Worker vẫn có ít nhất 1 query để
+    // gọi Tavily (nếu để rỗng, Worker sẽ bỏ qua research hoàn toàn
+    // dù requires_research=true).
+    if (requiresResearch && researchQueries.length === 0 && title) {
+      researchQueries = [title];
+    }
+    if (!requiresResearch) {
+      researchQueries = [];
+    }
+
+    return {
+      id: card.dataset.taskId,
+      title,
+      description: card.querySelector(".et-description").value.trim(),
+      objective: card.querySelector(".et-objective").value.trim(),
+      expected_output: card.querySelector(".et-expected-output").value.trim(),
+      requires_research: requiresResearch,
+      research_queries: researchQueries,
+      depends_on: JSON.parse(card.dataset.dependsOn || "[]"),
+      order: i,
+    };
+  });
 
   const hasEmpty = tasks.some(
     (t) => !t.title || !t.description || !t.objective || !t.expected_output,
@@ -483,11 +534,34 @@ async function sendHitlDecision(body) {
       body: JSON.stringify(body),
     });
     log(`Đã gửi quyết định: ${body.action}.`);
+    state.planUiMode = "view";
     el.planEditForm.classList.add("is-hidden");
     el.planRejectForm.classList.add("is-hidden");
     el.planView.classList.remove("is-hidden");
   } catch (err) {
     alert(`Không thể gửi quyết định: ${err.message}`);
+  }
+}
+
+async function pauseHitlTimeout() {
+  try {
+    await apiRequest(`/workflow/${state.workflowId}/hitl/pause`, {
+      method: "POST",
+    });
+    log("Đã tạm dừng đếm giờ tự động chấp nhận.", "waiting");
+  } catch (err) {
+    console.warn("Không thể tạm dừng đếm giờ:", err.message);
+  }
+}
+
+async function resumeHitlTimeout() {
+  try {
+    await apiRequest(`/workflow/${state.workflowId}/hitl/resume`, {
+      method: "POST",
+    });
+    log("Đã tiếp tục đếm giờ tự động chấp nhận.");
+  } catch (err) {
+    console.warn("Không thể tiếp tục đếm giờ:", err.message);
   }
 }
 
@@ -677,6 +751,7 @@ function resetApp() {
   state.lastCurrentNode = undefined;
   state.cachedPlan = null;
   state.articleMarkdown = null;
+  state.planUiMode = "view";
 
   hideErrorBanner();
   el.composerForm.reset();

@@ -48,7 +48,7 @@ from agents.hitl_handler import HITL_INTERRUPT_TYPE
 from agents.schemas.user_request import UserRequest
 from agents.hooks import register_task_hook, unregister_task_hook
 
-HITL_TIMEOUT_SECONDS = 180
+HITL_TIMEOUT_SECONDS = 300
 
 # ============================================================
 # STATE NỘI BỘ CỦA MODULE (in-memory, mất khi restart server)
@@ -116,6 +116,35 @@ async def submit_hitl_decision(
         _run_graph(workflow_id, resume_input=Command(resume=payload))
     )
 
+    return True
+
+
+def pause_hitl_timeout(workflow_id: str) -> bool:
+    """
+    Tạm dừng vĩnh viễn bộ đếm auto-approve (cho tới khi resume) - gọi
+    khi user bắt đầu mở form Edit/Reject, để họ có bao nhiêu thời gian
+    cũng được, không lo bị "cướp" giữa chừng bởi timeout cũ.
+
+    Trả về True nếu có gì đó để hủy, False nếu workflow không waiting_hitl.
+    """
+    if workflow_id not in _pending_plans:
+        return False
+    _cancel_timeout(workflow_id)
+    return True
+
+
+def resume_hitl_timeout(workflow_id: str) -> bool:
+    """
+    Lên lịch lại bộ đếm auto-approve (fresh, đủ HITL_TIMEOUT_SECONDS)
+    khi user bấm Hủy ở form Edit/Reject để quay lại xem Plan mà KHÔNG
+    gửi quyết định gì cả.
+
+    Trả về False nếu workflow không còn waiting_hitl nữa (ví dụ đã bị
+    resume bởi request khác trong lúc user đang mở form).
+    """
+    if workflow_id not in _pending_plans:
+        return False
+    _schedule_timeout(workflow_id)
     return True
 
 

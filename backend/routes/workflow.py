@@ -28,6 +28,8 @@ from backend.schemas import (
 from backend.services.workflow_manager import (
     get_final_article,
     get_pending_plan,
+    pause_hitl_timeout,
+    resume_hitl_timeout,
     start_workflow,
     submit_hitl_decision,
 )
@@ -147,6 +149,53 @@ async def submit_hitl(workflow_id: str, body: HITLDecisionRequest) -> HITLDecisi
         workflow_id=workflow_id,
         accepted=True,
         message=f"Đã ghi nhận quyết định '{body.action}', workflow đang tiếp tục chạy.",
+    )
+
+
+# ============================================================
+# POST /workflow/{id}/hitl/pause - Tạm dừng đếm giờ auto-approve
+# ============================================================
+
+@router.post("/{workflow_id}/hitl/pause", response_model=HITLDecisionResponse)
+async def pause_hitl_countdown(workflow_id: str) -> HITLDecisionResponse:
+    """
+    Gọi khi user bắt đầu mở form Edit/Reject - dừng vô hạn bộ đếm
+    auto-approve, tránh bị tự động chấp nhận Plan trong lúc họ chưa
+    kịp điền xong.
+    """
+    run = await get_workflow_with_tasks(workflow_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy workflow.")
+    if run.status != "waiting_hitl":
+        raise HTTPException(status_code=409, detail="Workflow không ở trạng thái chờ HITL.")
+
+    pause_hitl_timeout(workflow_id)
+    return HITLDecisionResponse(
+        workflow_id=workflow_id, accepted=True,
+        message="Đã tạm dừng đếm giờ tự động chấp nhận.",
+    )
+
+
+# ============================================================
+# POST /workflow/{id}/hitl/resume - Đếm lại giờ (khi user hủy form)
+# ============================================================
+
+@router.post("/{workflow_id}/hitl/resume", response_model=HITLDecisionResponse)
+async def resume_hitl_countdown(workflow_id: str) -> HITLDecisionResponse:
+    """
+    Gọi khi user bấm Hủy ở form Edit/Reject để quay lại xem Plan mà
+    không gửi quyết định gì - đếm lại từ đầu (fresh) bộ đếm auto-approve.
+    """
+    run = await get_workflow_with_tasks(workflow_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy workflow.")
+    if run.status != "waiting_hitl":
+        raise HTTPException(status_code=409, detail="Workflow không ở trạng thái chờ HITL.")
+
+    resume_hitl_timeout(workflow_id)
+    return HITLDecisionResponse(
+        workflow_id=workflow_id, accepted=True,
+        message="Đã tiếp tục đếm giờ tự động chấp nhận.",
     )
 
 

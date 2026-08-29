@@ -434,6 +434,21 @@ body {
   color: var(--text-faint);
 }
 
+.field--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.field--checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--amber);
+  cursor: pointer;
+}
+.field--checkbox .field__label {
+  cursor: pointer;
+}
+
 /* ============================================================
    BUTTONS
    ============================================================ */

@@ -48,7 +48,7 @@ from agents.hitl_handler import HITL_INTERRUPT_TYPE
 from agents.schemas.user_request import UserRequest
 from agents.hooks import register_task_hook, unregister_task_hook
 
-HITL_TIMEOUT_SECONDS = 300
+HITL_TIMEOUT_SECONDS = 180
 
 # ============================================================
 # STATE NỘI BỘ CỦA MODULE (in-memory, mất khi restart server)

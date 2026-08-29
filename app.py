@@ -7,7 +7,7 @@ Chạy file này để khởi động backend API server:
 Server sẽ chạy tại http://127.0.0.1:8000
 Swagger UI (test API trực tiếp trên trình duyệt): http://127.0.0.1:8000/docs
 """
-
+from backend.main import app
 import uvicorn
 
 if __name__ == "__main__":

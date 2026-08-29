@@ -18,10 +18,6 @@ limit TPM của Groq (free tier) khi nhiều worker chạy song song
 trong cùng 1 batch, trước khi đánh dấu thất bại hẳn.
 """
 
-"""
-... (giữ nguyên docstring cũ) ...
-"""
-
 import asyncio
 
 from pydantic import BaseModel, Field

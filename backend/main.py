@@ -9,12 +9,13 @@ workflow_runs/workflow_tasks nếu chưa có, idempotent).
 
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
-# Fix cho Windows: lặp lại phòng thủ giống các file khác trong project
-# (psycopg async mode không tương thích ProactorEventLoop mặc định).
 if sys.platform == "win32":
     import asyncio
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -23,10 +24,13 @@ from agents.db.connection import close_engine, init_db
 from backend.middleware import register_error_handlers
 from backend.routes import workflow_router
 
+BASE_DIR = Path(__file__).resolve().parent.parent  # root project (multi_agent_writer/)
+STATIC_DIR = BASE_DIR / "static"
+TEMPLATES_DIR = BASE_DIR / "templates"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Chạy khi app khởi động / tắt (thay cho @app.on_event đã deprecated)."""
     await init_db()
     yield
     await close_engine()
@@ -39,7 +43,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS: mở cho tất cả origin vì đây là tool cá nhân/nội bộ, không cần Auth.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -52,8 +55,16 @@ register_error_handlers(app)
 
 app.include_router(workflow_router)
 
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+@app.get("/", tags=["frontend"])
+async def serve_index(request: Request):
+    """Trả về giao diện chính - frontend gọi API cùng origin, không cần CORS phức tạp."""
+    return templates.TemplateResponse(request, "index.html", {})
+
 
 @app.get("/health", tags=["health"])
 async def health_check() -> dict:
-    """Endpoint kiểm tra server còn sống - hữu ích cho FE/monitoring."""
     return {"status": "ok"}

@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi-Agent Writer</title>
+    <link rel="icon" href="/static/favicon.jpg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <!-- ============================================================ -->
+      <!-- HEADER + PIPELINE RAIL (signature element)                    -->
+      <!-- ============================================================ -->
+      <header class="header">
+        <div class="header__brand">
+          <span class="header__logo">◆</span>
+          <div>
+            <h1 class="header__title">Multi-Agent Writer</h1>
+            <p class="header__subtitle">Pipeline viết bài blog tự động</p>
+          </div>
+        </div>
+
+        <div
+          class="pipeline-rail"
+          id="pipeline-rail"
+          aria-label="Tiến trình pipeline"
+        >
+          <!-- Các node được render bằng JS -->
+        </div>
+
+        <div class="header__progress">
+          <div class="progress-bar progress-bar--small">
+            <div class="progress-bar__fill" id="overall-progress-fill"></div>
+          </div>
+          <span class="header__progress-text" id="overall-progress-text"
+            >0%</span
+          >
+        </div>
+      </header>
+
+      <!-- ============================================================ -->
+      <!-- ERROR / BLOCKED BANNER                                        -->
+      <!-- ============================================================ -->
+      <div class="banner banner--error is-hidden" id="error-banner">
+        <div class="banner__content">
+          <span class="banner__icon">⚠</span>
+          <div>
+            <p class="banner__title" id="error-banner-title">Đã xảy ra lỗi</p>
+            <p class="banner__message" id="error-banner-message"></p>
+          </div>
+        </div>
+        <button class="btn btn--ghost" id="retry-btn">Thử lại</button>
+      </div>
+
+      <div class="layout">
+        <!-- ============================================================ -->
+        <!-- MAIN COLUMN                                                   -->
+        <!-- ============================================================ -->
+        <main class="main-col">
+          <!-- ---------- 01 COMPOSE ---------- -->
+          <section class="panel" id="composer-panel">
+            <div class="panel__header">
+              <span class="panel__eyebrow">01</span>
+              <h2 class="panel__title">Yêu cầu bài viết</h2>
+            </div>
+
+            <form id="composer-form" class="form">
+              <label class="field">
+                <span class="field__label"
+                  >Chủ đề <span class="field__required">*</span></span
+                >
+                <textarea
+                  id="f-topic"
+                  class="field__input field__input--textarea"
+                  rows="2"
+                  placeholder="Ví dụ: MCP (Model Context Protocol) cho AI Engineer"
+                  required
+                ></textarea>
+              </label>
+
+              <label class="field">
+                <span class="field__label"
+                  >Mô tả chi tiết (không bắt buộc)</span
+                >
+                <textarea
+                  id="f-raw-input"
+                  class="field__input field__input--textarea"
+                  rows="2"
+                  placeholder="Viết một bài blog bằng tiếng Việt về..."
+                ></textarea>
+              </label>
+
+              <div class="field-grid">
+                <label class="field">
+                  <span class="field__label">Ngôn ngữ</span>
+                  <select id="f-language" class="field__input">
+                    <option value="vi" selected>Tiếng Việt</option>
+                    <option value="en">English</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span class="field__label">Loại bài viết</span>
+                  <select id="f-article-type" class="field__input">
+                    <option value="blog" selected>Blog</option>
+                    <option value="tutorial">Tutorial</option>
+                    <option value="news">News</option>
+                    <option value="review">Review</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span class="field__label">Đối tượng độc giả</span>
+                  <input
+                    id="f-audience"
+                    class="field__input"
+                    type="text"
+                    placeholder="Ví dụ: AI Engineer"
+                  />
+                </label>
+
+                <label class="field">
+                  <span class="field__label">Văn phong</span>
+                  <select id="f-tone" class="field__input">
+                    <option value="professional" selected>Professional</option>
+                    <option value="technical">Technical</option>
+                    <option value="friendly">Friendly</option>
+                    <option value="beginner-friendly">Beginner-friendly</option>
+                  </select>
+                </label>
+              </div>
+
+              <button type="submit" class="btn btn--primary" id="start-btn">
+                <span>Bắt đầu viết bài</span>
+              </button>
+            </form>
+
+            <div class="composer-summary is-hidden" id="composer-summary">
+              <p class="composer-summary__label">Đang chạy cho chủ đề:</p>
+              <p
+                class="composer-summary__topic"
+                id="composer-summary-topic"
+              ></p>
+            </div>
+          </section>
+
+          <!-- ---------- 02 PLAN ---------- -->
+          <section class="panel is-hidden" id="plan-panel">
+            <div class="panel__header">
+              <span class="panel__eyebrow">02</span>
+              <h2 class="panel__title">Kế hoạch bài viết</h2>
+              <span class="status-badge" id="plan-status-badge">—</span>
+            </div>
+
+            <div class="progress-bar">
+              <div class="progress-bar__fill" id="plan-progress-fill"></div>
+            </div>
+
+            <!-- Xem trước Plan (read-only) -->
+            <div id="plan-view">
+              <div class="plan-meta">
+                <h3 class="plan-meta__title" id="plan-title">—</h3>
+                <p class="plan-meta__objective" id="plan-objective"></p>
+                <div class="plan-meta__tags">
+                  <span class="tag" id="plan-audience"></span>
+                  <span class="tag" id="plan-tone"></span>
+                </div>
+              </div>
+
+              <ul class="plan-task-list" id="plan-task-list"></ul>
+
+              <div class="panel__actions" id="plan-actions">
+                <button class="btn btn--primary" id="plan-approve-btn">
+                  Chấp nhận
+                </button>
+                <button class="btn btn--secondary" id="plan-edit-btn">
+                  Chỉnh sửa
+                </button>
+                <button class="btn btn--danger-ghost" id="plan-reject-btn">
+                  Yêu cầu lập lại
+                </button>
+              </div>
+
+              <p class="hint" id="plan-hint">
+                Bạn có 3 phút để phản hồi. Hết giờ hệ thống sẽ tự động chấp nhận
+                kế hoạch.
+              </p>
+            </div>
+
+            <!-- Form Edit Plan -->
+            <div class="is-hidden" id="plan-edit-form">
+              <div class="field-grid">
+                <label class="field">
+                  <span class="field__label">Tiêu đề</span>
+                  <input id="e-title" class="field__input" type="text" />
+                </label>
+                <label class="field">
+                  <span class="field__label">Đối tượng độc giả</span>
+                  <input id="e-audience" class="field__input" type="text" />
+                </label>
+                <label class="field field--full">
+                  <span class="field__label">Mục tiêu</span>
+                  <textarea
+                    id="e-objective"
+                    class="field__input field__input--textarea"
+                    rows="2"
+                  ></textarea>
+                </label>
+                <label class="field">
+                  <span class="field__label">Văn phong</span>
+                  <input id="e-tone" class="field__input" type="text" />
+                </label>
+              </div>
+
+              <div class="edit-tasks__header">
+                <h4>Danh sách task (3–7)</h4>
+                <button
+                  type="button"
+                  class="btn btn--secondary btn--small"
+                  id="add-task-btn"
+                >
+                  + Thêm task
+                </button>
+              </div>
+
+              <div id="edit-task-list"></div>
+
+              <div class="panel__actions">
+                <button class="btn btn--primary" id="save-edit-btn">
+                  Lưu &amp; tiếp tục
+                </button>
+                <button class="btn btn--ghost" id="cancel-edit-btn">Hủy</button>
+              </div>
+            </div>
+
+            <!-- Form Reject (nhập feedback) -->
+            <div class="is-hidden" id="plan-reject-form">
+              <label class="field">
+                <span class="field__label"
+                  >Bạn muốn thay đổi gì trong kế hoạch mới?</span
+                >
+                <textarea
+                  id="reject-feedback"
+                  class="field__input field__input--textarea"
+                  rows="2"
+                  placeholder="Ví dụ: Thêm một phần về bảo mật..."
+                ></textarea>
+              </label>
+              <div class="panel__actions">
+                <button class="btn btn--primary" id="confirm-reject-btn">
+                  Gửi yêu cầu lập lại
+                </button>
+                <button class="btn btn--ghost" id="cancel-reject-btn">
+                  Hủy
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- ---------- 03 TASKS ---------- -->
+          <section class="panel is-hidden" id="tasks-panel">
+            <div class="panel__header">
+              <span class="panel__eyebrow">03</span>
+              <h2 class="panel__title">Các task đang xử lý</h2>
+            </div>
+            <div class="task-grid" id="task-grid"></div>
+          </section>
+
+          <!-- ---------- 04 ARTICLE ---------- -->
+          <section class="panel is-hidden" id="article-panel">
+            <div class="panel__header">
+              <span class="panel__eyebrow">04</span>
+              <h2 class="panel__title">Bài viết hoàn chỉnh</h2>
+              <span
+                class="status-badge status-badge--success"
+                id="article-score-badge"
+              ></span>
+            </div>
+
+            <div class="article-toolbar">
+              <div class="view-toggle">
+                <button
+                  class="view-toggle__btn is-active"
+                  id="view-rendered-btn"
+                  type="button"
+                >
+                  Xem trực quan
+                </button>
+                <button
+                  class="view-toggle__btn"
+                  id="view-raw-btn"
+                  type="button"
+                >
+                  Xem Markdown
+                </button>
+              </div>
+              <div class="article-toolbar__actions">
+                <button class="btn btn--secondary btn--small" id="copy-btn">
+                  Sao chép
+                </button>
+                <button class="btn btn--primary btn--small" id="download-btn">
+                  Tải xuống .md
+                </button>
+              </div>
+            </div>
+
+            <article class="article-body" id="article-rendered"></article>
+            <pre class="article-raw is-hidden" id="article-raw"></pre>
+
+            <div class="panel__actions">
+              <button class="btn btn--ghost" id="new-article-btn">
+                Viết bài mới
+              </button>
+            </div>
+          </section>
+        </main>
+
+        <!-- ============================================================ -->
+        <!-- ACTIVITY LOG SIDEBAR                                          -->
+        <!-- ============================================================ -->
+        <aside class="log-panel">
+          <div class="log-panel__header">
+            <h2 class="log-panel__title">Nhật ký hoạt động</h2>
+          </div>
+          <div class="log-panel__body" id="log-body">
+            <p class="log-empty">Chưa có hoạt động nào.</p>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <template id="task-card-template">
+      <div class="task-card">
+        <div class="task-card__head">
+          <span class="task-card__status-dot"></span>
+          <span class="task-card__id"></span>
+          <span class="status-badge task-card__badge"></span>
+        </div>
+        <p class="task-card__title"></p>
+        <div class="progress-bar progress-bar--small">
+          <div class="progress-bar__fill"></div>
+        </div>
+        <p class="task-card__error is-hidden"></p>
+      </div>
+    </template>
+
+    <template id="edit-task-template">
+      <div class="edit-task-card">
+        <div class="edit-task-card__head">
+          <span class="edit-task-card__label"></span>
+          <button
+            type="button"
+            class="btn btn--danger-ghost btn--small edit-task-card__remove"
+          >
+            Xóa
+          </button>
+        </div>
+        <label class="field">
+          <span class="field__label">Tiêu đề</span>
+          <input class="field__input et-title" type="text" />
+        </label>
+        <label class="field">
+          <span class="field__label">Mô tả</span>
+          <textarea
+            class="field__input field__input--textarea et-description"
+            rows="2"
+          ></textarea>
+        </label>
+        <label class="field">
+          <span class="field__label">Mục tiêu</span>
+          <textarea
+            class="field__input field__input--textarea et-objective"
+            rows="2"
+          ></textarea>
+        </label>
+        <label class="field">
+          <span class="field__label">Output mong muốn</span>
+          <textarea
+            class="field__input field__input--textarea et-expected-output"
+            rows="2"
+          ></textarea>
+        </label>
+      </div>
+    </template>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.5/purify.min.js"></script>
+    <script src="/static/script.js"></script>
+  </body>
+</html>

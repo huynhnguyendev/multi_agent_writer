@@ -44,6 +44,7 @@ const state = {
   articleMarkdown: null,
   editTaskCounter: 0,
   planUiMode: "view", // "view" | "edit" | "reject"
+  isRegeneratingPlan: false,
 };
 
 // ============================================================
@@ -87,6 +88,7 @@ const el = {
   planApproveBtn: document.getElementById("plan-approve-btn"),
   planEditBtn: document.getElementById("plan-edit-btn"),
   planRejectBtn: document.getElementById("plan-reject-btn"),
+  planRegeneratingNotice: document.getElementById("plan-regenerating-notice"),
 
   planEditForm: document.getElementById("plan-edit-form"),
   eTitle: document.getElementById("e-title"),
@@ -249,7 +251,12 @@ function render(data) {
   }
   hideErrorBanner();
 
-  if (data.plan) state.cachedPlan = data.plan;
+  if (data.status === "waiting_hitl" && data.plan) {
+    // Plan mới (do Planner tạo lại sau reject) đã thực sự tới -> tắt
+    // trạng thái "đang tạo lại", cập nhật cache về bản mới nhất.
+    state.isRegeneratingPlan = false;
+    state.cachedPlan = data.plan;
+  }
 
   if (data.status === "waiting_hitl") {
     showPlanPanel(data);
@@ -314,6 +321,27 @@ function showPlanPanel(data, opts = {}) {
   const plan = data.plan || state.cachedPlan;
   if (!plan) return;
 
+  const isWaiting = data.status === "waiting_hitl";
+
+  // Đang chờ Planner tạo lại Plan mới sau khi reject -> ẩn nội dung
+  // Plan CŨ đi, chỉ hiện thông báo, tránh gây hiểu lầm là hệ thống
+  // "đứng yên" hoặc chưa nhận được yêu cầu reject.
+  if (state.isRegeneratingPlan) {
+    el.planRegeneratingNotice.classList.remove("is-hidden");
+    el.planTitle.parentElement.classList.add("is-hidden"); // .plan-meta
+    el.planTaskList.classList.add("is-hidden");
+    el.planActions.classList.add("is-hidden");
+    el.planHint.classList.add("is-hidden");
+    el.planStatusBadge.textContent = "Đang tạo lại";
+    el.planStatusBadge.className = "status-badge status-badge--waiting";
+    el.planProgressFill.style.width = `${data.plan_progress}%`;
+    return;
+  }
+
+  el.planRegeneratingNotice.classList.add("is-hidden");
+  el.planTitle.parentElement.classList.remove("is-hidden");
+  el.planTaskList.classList.remove("is-hidden");
+
   el.planTitle.textContent = plan.title;
   el.planObjective.textContent = plan.objective;
   el.planAudience.textContent = plan.target_audience;
@@ -327,18 +355,12 @@ function showPlanPanel(data, opts = {}) {
     el.planTaskList.appendChild(li);
   });
 
-  const isWaiting = data.status === "waiting_hitl";
   el.planStatusBadge.textContent = isWaiting ? "Chờ xác nhận" : "Đã chấp nhận";
   el.planStatusBadge.className = `status-badge ${isWaiting ? "status-badge--waiting" : "status-badge--success"}`;
 
   el.planActions.classList.toggle("is-hidden", !isWaiting);
   el.planHint.classList.toggle("is-hidden", !isWaiting);
 
-  // CHỈ ép về sub-view "view" khi user thực sự đang ở chế độ đó.
-  // Nếu đang mở form Edit/Reject (planUiMode !== "view"), TUYỆT ĐỐI
-  // không đụng vào - tránh bug mất nội dung đang gõ dở mỗi lần poll
-  // 3s (waiting_hitl có thể kéo dài tới 60s, gần như chắc chắn dính
-  // ít nhất 1 lần poll giữa chừng nếu không có fix này).
   if (state.planUiMode === "view") {
     el.planEditForm.classList.add("is-hidden");
     el.planRejectForm.classList.add("is-hidden");
@@ -374,6 +396,7 @@ el.confirmRejectBtn.addEventListener("click", async () => {
     alert("Vui lòng nhập yêu cầu chỉnh sửa.");
     return;
   }
+  state.isRegeneratingPlan = true;
   await sendHitlDecision({ action: "rejected", edited_plan: null, feedback });
 });
 
@@ -478,11 +501,6 @@ el.saveEditBtn.addEventListener("click", async () => {
     ).checked;
     let researchQueries = JSON.parse(card.dataset.researchQueries || "[]");
 
-    // Nếu user bật research nhưng chưa có query cụ thể nào (task mới
-    // thêm, hoặc task gốc vốn không cần research) -> tự dùng title
-    // làm query mặc định, đảm bảo Worker vẫn có ít nhất 1 query để
-    // gọi Tavily (nếu để rỗng, Worker sẽ bỏ qua research hoàn toàn
-    // dù requires_research=true).
     if (requiresResearch && researchQueries.length === 0 && title) {
       researchQueries = [title];
     }
@@ -519,6 +537,12 @@ el.saveEditBtn.addEventListener("click", async () => {
     estimated_sections: tasks.length,
     tasks,
   };
+
+  // Cập nhật cache NGAY bằng bản đã edit - vì sau khi approve+edited,
+  // backend không còn trả lại data.plan qua /status nữa (chỉ trả khi
+  // waiting_hitl), nên nếu không cập nhật ở đây, Plan panel sẽ mãi
+  // hiển thị bản GỐC (trước khi edit) thay vì bản user vừa sửa.
+  state.cachedPlan = editedPlan;
 
   await sendHitlDecision({
     action: "edited",
@@ -752,6 +776,7 @@ function resetApp() {
   state.cachedPlan = null;
   state.articleMarkdown = null;
   state.planUiMode = "view";
+  state.isRegeneratingPlan = false;
 
   hideErrorBanner();
   el.composerForm.reset();

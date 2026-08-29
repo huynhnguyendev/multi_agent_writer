@@ -567,6 +567,12 @@ body {
 /* ============================================================
    PLAN PANEL
    ============================================================ */
+
+.hint--pending {
+  color: var(--amber);
+  font-weight: 500;
+}
+
 .plan-meta__title {
   font-size: 18px;
   margin: 0 0 6px;

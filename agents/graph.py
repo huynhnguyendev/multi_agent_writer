@@ -379,12 +379,8 @@ def build_graph_builder() -> StateGraph:
 async def get_compiled_graph():
     """
     Context manager tạo checkpointer PostgreSQL + compile graph.
-
-    Dùng JsonPlusSerializer với allowed_json_modules tường minh để
-    tránh warning deserialize + tương thích ngược khi langgraph-
-    checkpoint chặn hẳn kiểu deserialize mặc định ở phiên bản sau.
     """
-    serializer = JsonPlusSerializer(allowed_json_modules=ALLOWED_MSGPACK_MODULES)
+    serializer = JsonPlusSerializer(allowed_msgpack_modules=ALLOWED_MSGPACK_MODULES)
 
     async with AsyncPostgresSaver.from_conn_string(DATABASE_URL, serde=serializer) as checkpointer:
         await checkpointer.setup()

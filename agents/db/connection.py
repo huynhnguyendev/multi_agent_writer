@@ -62,9 +62,17 @@ def _to_async_sqlalchemy_url(url: str) -> str:
 
 ASYNC_DATABASE_URL = _to_async_sqlalchemy_url(_RAW_DATABASE_URL)
 
-# echo=False mặc định (không log SQL ra console) - có thể bật True tạm
-# thời khi debug bằng cách sửa trực tiếp ở đây nếu cần soi câu lệnh SQL.
-_engine = create_async_engine(ASYNC_DATABASE_URL, echo=False, pool_pre_ping=True)
+# echo=False mặc định (không log SQL ra console). pool_pre_ping kiểm
+# tra connection còn sống trước khi dùng, pool_recycle chủ động tái
+# tạo connection sau mỗi 280s (dưới ngưỡng timeout phổ biến của nhiều
+# Postgres server/managed provider) để tránh dùng phải connection đã
+# bị server/OS âm thầm đóng do idle quá lâu.
+_engine = create_async_engine(
+    ASYNC_DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,
+    pool_recycle=280,
+)
 
 _session_factory = async_sessionmaker(
     bind=_engine,
@@ -80,17 +88,34 @@ async def get_session():
     (unit of work). Tự rollback nếu có exception, không tự commit -
     caller chịu trách nhiệm gọi `await session.commit()` khi cần.
 
+    Nếu gặp lỗi mất kết nối (OperationalError - connection đã bị
+    server/OS đóng do idle), tự động dispose pool cũ và thử lại 1 lần
+    với connection mới, trước khi để lỗi propagate ra ngoài.
+
     Cách dùng:
         async with get_session() as session:
             session.add(obj)
             await session.commit()
     """
-    async with _session_factory() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+    from sqlalchemy.exc import OperationalError
+
+    try:
+        async with _session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+    except OperationalError as e:
+        print(f"⚠️  [db] Mất kết nối DB ({e}), đang thử tái kết nối...")
+        await _engine.dispose()
+
+        async with _session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
 
 
 async def init_db() -> None:

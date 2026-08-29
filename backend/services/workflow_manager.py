@@ -48,7 +48,7 @@ from agents.hitl_handler import HITL_INTERRUPT_TYPE
 from agents.schemas.user_request import UserRequest
 from agents.hooks import register_task_hook, unregister_task_hook
 
-HITL_TIMEOUT_SECONDS = 60
+HITL_TIMEOUT_SECONDS = 300
 
 # ============================================================
 # STATE NỘI BỘ CỦA MODULE (in-memory, mất khi restart server)
@@ -122,6 +122,31 @@ async def submit_hitl_decision(
 def get_pending_plan(workflow_id: str) -> dict | None:
     """Lấy Plan (dạng dict) đang chờ user xác nhận, None nếu không có."""
     return _pending_plans.get(workflow_id)
+
+
+async def get_final_article(workflow_id: str) -> dict | None:
+    """
+    Lấy nội dung FinalArticle đầy đủ (title, markdown, word_count) từ
+    checkpoint của graph - đây là nguồn sự thật duy nhất cho nội dung
+    bài viết, KHÔNG lưu trùng lặp vào bảng workflow_runs (giữ DB nhẹ,
+    chỉ lưu metadata: score, status, output_path...).
+
+    Trả về None nếu workflow chưa có final_article (chưa chạy tới
+    Synthesizer, hoặc bị lỗi trước đó).
+    """
+    async with get_compiled_graph() as graph:
+        config = {"configurable": {"thread_id": workflow_id}}
+        state = await graph.aget_state(config)
+        article = state.values.get("final_article")
+
+        if article is None:
+            return None
+
+        return {
+            "title": article.title,
+            "markdown": article.markdown,
+            "word_count": article.word_count,
+        }
 
 
 # ============================================================
